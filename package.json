@@ -1,0 +1,23 @@
+{
+  "name": "maia-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js",
+    "test": "node --no-warnings test.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@revenuecat/purchases-capacitor": "^13.6.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/manrope": "^5.3.0"
+  }
+}

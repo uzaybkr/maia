@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "maia",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--no-warnings", "server.js"],
+      "port": 3300
+    }
+  ]
+}
