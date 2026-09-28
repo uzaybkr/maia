@@ -516,23 +516,25 @@ function renderOnboarding() {
       wrap.querySelectorAll('[data-climate]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.climate === d.climate)));
     }));
     wrap.querySelector('#region').addEventListener('input', (e) => { d.region = e.target.value; });
+  } else if (!state.user.is_premium) {
+    wrap = mount(`
+      ${top(4)}
+      ${maiaSays("I'll begin with a ritual built from your answers. With Premium, I read your photos and write it just for you.")}
+      <h1>Your <em>starter</em> ritual</h1>
+      ${premiumInvite()}
+      <div class="actions"><button class="btn block" id="composeBtn">Compose my starter ritual</button></div>
+    `);
+    wrap.querySelector('#composeBtn').addEventListener('click', () => { d.photos = {}; compose(d); });
   } else {
     wrap = mount(`
       ${top(4)}
-      ${maiaSays("Optional. A photo shows me where to start, and it's gone from our servers by tonight.")}
-      <h1>Let me <em>see</em></h1>
-      ${policyCard()}
-      <div class="glass" id="captures"></div>
-      <div class="glass" id="keepSlot"></div>
-      <p class="error" id="err" role="alert" hidden></p>
+      ${photoStep(d, "Optional. A photo shows me where to start, and it's gone from our servers by tonight.")}
       <div class="actions">
         <button class="btn block" id="composeBtn">Compose my ritual</button>
         <button class="btn quiet" id="skipBtn">Skip photos for now</button>
       </div>
     `);
-    const captures = wrap.querySelector('#captures');
-    KINDS.forEach((k) => captures.appendChild(photoCapture(k, d.photos)));
-    wrap.querySelector('#keepSlot').appendChild(keepOnDeviceToggle());
+    wirePhotoStep(wrap, d);
     wrap.querySelector('#composeBtn').addEventListener('click', () => compose(d));
     wrap.querySelector('#skipBtn').addEventListener('click', () => { d.photos = {}; compose(d); });
   }
@@ -540,7 +542,42 @@ function renderOnboarding() {
   wrap.querySelector('[data-back]')?.addEventListener('click', () => go(d.step - 1));
 }
 
-async function compose(d) {
+// The "let me see" photo step, shared by onboarding and by new Premium members composing Maia's ritual later.
+const photoStep = (d, intro) => `
+  ${maiaSays(intro)}
+  <h1>Let me <em>see</em></h1>
+  ${policyCard()}
+  <div class="glass" id="captures"></div>
+  <div class="glass" id="keepSlot"></div>`;
+function wirePhotoStep(wrap, d) {
+  const captures = wrap.querySelector('#captures');
+  KINDS.forEach((k) => captures.appendChild(photoCapture(k, d.photos)));
+  wrap.querySelector('#keepSlot').appendChild(keepOnDeviceToggle());
+}
+
+// What free members see where Premium's photo features would be. Free costs no AI at launch.
+const premiumInvite = (button = '') => `
+  <section class="glass stack">
+    <div class="spread"><strong>Let Maia <em>see</em> you</strong><span class="pill">${icon('lock', 12)} Premium</span></div>
+    <p class="muted">She reads your skin, hair and smile from photos, writes your ritual personally and tracks the change day by day.</p>
+    ${button}
+  </section>`;
+
+function renderCompose() {
+  if (!state.user.is_premium) return nav('#/premium');
+  const d = { goals: [], photos: { skin: null, hair: null, teeth: null } };
+  const wrap = mount(`
+    ${photoStep(d, "Add one photo or all three. It's gone from our servers by tonight.")}
+    <div class="actions"><button class="btn block" id="composeBtn">Compose my ritual</button></div>
+  `, { tab: '#/home' });
+  wirePhotoStep(wrap, d);
+  wrap.querySelector('#composeBtn').addEventListener('click', () => {
+    if (!Object.values(d.photos).some(Boolean)) return toast('Tick the consent box and choose a photo first.');
+    compose(d, false);
+  });
+}
+
+async function compose(d, onboarding = true) {
   const lines = ['Reading your goals…', 'Balancing your morning and evening…', 'Choosing what matters first…', 'Setting out your ritual…'];
   const wrap = mount(`
     ${arch('lg', true)}
@@ -561,10 +598,12 @@ async function compose(d) {
   try {
     // A brief, unhurried pause even when the fallback answers instantly: this is a ritual, not a form submit.
     await Promise.all([(async () => {
-      await api('POST', '/api/onboarding', {
-        goals: d.goals, preferences: d.preferences, sensitivities: d.sensitivities,
-        budget: d.budget, region: d.region, climate: d.climate,
-      });
+      if (onboarding) {
+        await api('POST', '/api/onboarding', {
+          goals: d.goals, preferences: d.preferences, sensitivities: d.sensitivities,
+          budget: d.budget, region: d.region, climate: d.climate,
+        });
+      }
       await submitPhotos(d.photos);
       const data = await api('POST', '/api/ritual/generate');
       state.ritual = data.ritual; state.ritualId = data.id; state.progress = data.progress; state.source = data.source;
@@ -573,8 +612,12 @@ async function compose(d) {
     state.onboard = null;
     nav('#/home');
   } catch (e) {
-    d.step = 4;
-    renderOnboarding();
+    if (onboarding) {
+      d.step = 4;
+      renderOnboarding();
+    } else {
+      renderCompose();
+    }
     toast(e.message);
   } finally {
     clearInterval(ticker);
@@ -637,9 +680,10 @@ async function renderHome() {
       <div class="foot">
         ${ring(pct)}
         <div style="flex:1"><strong>${done} of ${total}</strong><span class="muted">steps today</span></div>
-        ${state.source === 'fallback' ? '<span class="pill" title="Full personalization arrives once Maia\'s AI is connected">Preview ritual</span>' : '<span class="signature">Maia</span>'}
+        ${{ fallback: '<span class="pill" title="Full personalization arrives once Maia\'s AI is connected">Preview ritual</span>', starter: '<span class="pill">Starter ritual</span>' }[state.source] || '<span class="signature">Maia</span>'}
       </div>
     </section>
+    ${state.source === 'starter' ? premiumInvite(`<button class="btn block" id="inviteBtn">${state.user.is_premium ? 'Compose with my photos' : 'Discover Premium'}</button>`) : ''}
     <div class="seg" role="group" aria-label="Ritual moment">
       ${moments.map(([k, label, ic]) => `<button type="button" data-seg="${k}" aria-pressed="${seg === k}">${icon(ic, 16)}${label}</button>`).join('')}
     </div>
@@ -659,6 +703,7 @@ async function renderHome() {
     </div>
   `, { tab: '#/home' });
 
+  wrap.querySelector('#inviteBtn')?.addEventListener('click', () => nav(state.user.is_premium ? '#/compose' : '#/premium'));
   wrap.querySelectorAll('[data-seg]').forEach((b) => b.addEventListener('click', () => { state.segment = b.dataset.seg; renderHome(); }));
   wrap.querySelectorAll('.step').forEach((row) => row.addEventListener('click', async () => {
     if (row.classList.contains('done')) return;
@@ -767,7 +812,7 @@ async function renderProgress() {
       <section class="glass hero">
         ${arch('sm')}
         <h2>Your first <em>${esc(kind)}</em> examination</h2>
-        <p class="lede">Add a photo below. Maia scores what she sees, then tracks it with you day by day.</p>
+        <p class="lede">${state.user.is_premium ? 'Add a photo below. ' : ''}Maia scores what she sees, then tracks it with you day by day.</p>
       </section>`}
     ${photoNow ? `
       <section class="glass stack">
@@ -778,13 +823,14 @@ async function renderProgress() {
         </div>
         <button class="btn quiet" id="clearDevice">${icon('trash', 16)} Delete photos on this phone</button>
       </section>` : ''}
+    ${state.user.is_premium ? `
     <section class="glass stack">
       <h2>Today's <em>check-in</em></h2>
       <div id="captureSlot"></div>
       <div id="keepSlot"></div>
       <p class="error" id="err" role="alert" hidden></p>
       <button class="btn block" id="analyzeBtn">Analyze</button>
-    </section>
+    </section>` : premiumInvite('<button class="btn block" id="inviteBtn">Discover Premium</button>')}
     ${policyDetails()}
     ${exams.length > 1 ? `
       <section class="glass">
@@ -796,8 +842,9 @@ async function renderProgress() {
       </section>` : ''}
   `, { tab: '#/progress' });
 
-  wrap.querySelector('#captureSlot').appendChild(photoCapture(kind, newPhoto));
-  wrap.querySelector('#keepSlot').appendChild(keepOnDeviceToggle());
+  wrap.querySelector('#captureSlot')?.appendChild(photoCapture(kind, newPhoto));
+  wrap.querySelector('#keepSlot')?.appendChild(keepOnDeviceToggle());
+  wrap.querySelector('#inviteBtn')?.addEventListener('click', () => nav('#/premium'));
   wrap.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => { state.progressKind = b.dataset.kind; render(); }));
   wrap.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { state.compareMode = b.dataset.mode; render(); }));
   wrap.querySelector('#clearDevice')?.addEventListener('click', async () => {
@@ -807,7 +854,7 @@ async function renderProgress() {
     render();
   });
   const err = wrap.querySelector('#err');
-  wrap.querySelector('#analyzeBtn').addEventListener('click', async (e) => {
+  wrap.querySelector('#analyzeBtn')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     err.hidden = true;
     if (!newPhoto[kind]) { err.textContent = 'Tick the consent box and choose a photo first.'; err.hidden = false; return; }
@@ -1068,9 +1115,10 @@ async function renderPremium(status) {
     dev: 'Test upgrade: no payment was taken.',
   }[u.billing_source] || '';
   const benefits = [
+    ['camera', 'Daily photo check-ins', 'Skin, hair and smile, compared day by day and week by week'],
+    ['sparkle', 'A ritual written for you', 'Composed by Maia from your photos, not a template'],
     ['repeat', 'Revise in one tap', 'Simplify, swap or lower the cost'],
     ['chat', 'Talk with Maia', `Up to ${billing.limits.premium.chat[0]} questions a day, answered calmly`],
-    ['trend', `${billing.limits.premium.examination[0]} photo analyses a day`, `Free includes ${billing.limits.free.examination[0]}`],
   ];
 
   const wrap = mount(`
@@ -1218,6 +1266,7 @@ async function route() {
   if (!state.user.onboarding_complete && hash !== '#/onboarding') return nav('#/onboarding');
 
   if (hash === '#/onboarding') return renderOnboarding();
+  if (hash === '#/compose') return renderCompose();
   if (hash === '#/progress') return renderProgress();
   if (hash === '#/shopping') return renderShopping();
   if (hash === '#/chat') return renderChat();

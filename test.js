@@ -209,6 +209,18 @@ try {
   cookie = mainCookie;
   assert.equal((await call('GET', '/api/me')).data.onboarding_complete, true);
 
+  /* Free members cost no AI: a starter ritual from their answers; photos, revisions and chat are Premium */
+  const userId = peek("SELECT id FROM users WHERE email = 'a@b.co'").id;
+  assert.equal((await call('POST', '/api/examinations', { kind: 'skin', photo: PHOTO, consent: true })).status, 402, 'photo analysis is premium');
+  const starter = (await call('POST', '/api/ritual/generate')).data;
+  assert.equal(starter.source, 'starter');
+  assert.ok(starter.ritual.shopping.every((s) => s.tier === 'now'), 'low budget drops upgrades');
+  assert.equal((await call('POST', '/api/ritual/revise', { action: 'simplify' })).status, 402, 'free users gated');
+  assert.equal((await call('POST', '/api/chat', { message: 'hi' })).status, 402, 'free users gated');
+  assert.equal(peek('SELECT COUNT(*) AS n FROM ai_calls').n, 0, 'free members trigger no AI calls');
+  assert.equal(peekPhotos('SELECT COUNT(*) AS n FROM photos').n, 0, 'free members store no photos');
+  await call('POST', '/api/subscribe');
+
   /* T1: analyze, keep examination, photo sealed in its own DB until end of local day */
   assert.equal((await call('POST', '/api/examinations', { kind: 'skin', photo: PHOTO, consent: false })).status, 400, 'consent required');
   assert.equal((await call('POST', '/api/examinations', { kind: 'skin', photo: 'javascript:alert(1)', consent: true })).status, 400, 'invalid photo rejected');
@@ -226,8 +238,7 @@ try {
   assert.ok(!JSON.stringify((await call('GET', '/api/profile')).data).includes('v1:'), 'API never returns photos');
 
   const gen = (await call('POST', '/api/ritual/generate')).data;
-  assert.equal(gen.source, 'fallback');
-  assert.ok(gen.ritual.shopping.every((s) => s.tier === 'now'), 'low budget drops upgrades');
+  assert.equal(gen.source, 'fallback', "premium gets Maia's own ritual (fallback while no AI key is set)");
 
   pokePhotos('UPDATE photos SET expires_at = ?', [new Date(Date.now() - 1000).toISOString()]);
   await call('POST', '/api/ritual/generate');
@@ -235,7 +246,6 @@ try {
   assert.equal(peek('SELECT COUNT(*) AS n FROM examinations').n, 1, 'examination survives the purge');
 
   /* T3: examination history for day/week comparison */
-  const userId = peek("SELECT id FROM users WHERE email = 'a@b.co'").id;
   poke('INSERT INTO examinations (id, user_id, kind, metrics, summary, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ['old-1', userId, 'skin', '{"hydration":4}', 'last week', 'fallback', new Date(Date.now() - 8 * 86400000).toISOString()]);
   const hist = (await call('GET', '/api/examinations?kind=skin')).data.examinations;
@@ -251,17 +261,15 @@ try {
   assert.deepEqual((await call('GET', '/api/ritual/today?day=2026-01-02')).data.progress, [], 'progress resets each day');
   assert.equal((await call('POST', '/api/ritual/checkin', { ritualId: 'not-mine', stepKey: 'x' })).status, 404);
 
-  // Budget = AI attempts per kind (free: 2 rituals a week, 2 used so far); rejected requests don't count.
-  assert.equal((await call('POST', '/api/ritual/generate')).status, 429, 'free users have a ritual budget');
+  // Budget = AI attempts per kind (premium: 3 new rituals a week, 2 used so far); rejected requests don't count.
+  assert.equal((await call('POST', '/api/ritual/generate')).status, 200);
+  assert.equal((await call('POST', '/api/ritual/generate')).status, 429, 'new rituals have a weekly budget');
   assert.equal((await call('POST', '/api/examinations', { kind: 'hair', photo: PHOTO, consent: true })).status, 200, 'limits are per kind');
-  assert.equal(peek('SELECT COUNT(*) AS n FROM ai_calls WHERE user_id = ?', [userId]).n, 4, 'only allowed calls are logged');
+  assert.equal(peek('SELECT COUNT(*) AS n FROM ai_calls WHERE user_id = ?', [userId]).n, 5, 'only allowed calls are logged');
   await call('POST', '/api/privacy/delete');
   assert.equal((await call('POST', '/api/ritual/generate')).status, 429, 'deleting history does not reset the AI budget');
 
-  /* premium gating */
-  assert.equal((await call('POST', '/api/ritual/revise', { action: 'simplify' })).status, 402, 'free users gated');
-  assert.equal((await call('POST', '/api/chat', { message: 'hi' })).status, 402, 'free users gated');
-  await call('POST', '/api/subscribe');
+  /* premium features */
   const rev = (await call('POST', '/api/ritual/revise', { action: 'simplify' })).data;
   assert.equal(rev.ritual.morning.length, 1, 'simplify trims steps');
   assert.equal((await call('GET', '/api/ritual/today')).data.id, rev.id);

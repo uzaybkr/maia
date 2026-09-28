@@ -14,7 +14,7 @@ import {
   revenueCatEnabled, verifyRevenueCatAuth, applyRevenueCatEvent, syncRevenueCat,
 } from './lib/billing.js';
 import { sendVerificationEmail, sendPasswordResetEmail, emailEnabled } from './lib/mail.js';
-import { generateRitual, generateChatReply, examinePhoto } from './lib/ai.js';
+import { generateRitual, generateChatReply, examinePhoto, starterRitual } from './lib/ai.js';
 import { PHOTO_KINDS, cleanPhoto, storePhoto, purgeExpiredPhotos, deletePhotos, todaysPhotos } from './lib/photos.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -156,10 +156,11 @@ function ritualProgress(ritualId, day) {
 // results can't reset it, and restarts can't either. Check + insert run synchronously, so parallel requests can't
 // all slip past. MAIA_AI_DAILY_CAP is a global kill-switch across all users; set it to what your budget allows.
 // Limits are [max calls, window] per kind. A new ritual runs on the big model, so it's the scarce one; one check-in
-// is up to 3 photo analyses (skin, hair, teeth).
+// is up to 3 photo analyses (skin, hair, teeth). Free has no AI at launch (a starter ritual costs nothing); a free
+// tier can be opened later by adding limits here, e.g. { examination: [3, WEEK_MS] }.
 const WEEK_MS = 7 * DAY_MS;
 const AI_LIMITS = {
-  free: { examination: [3, DAY_MS], ritual: [2, WEEK_MS] },
+  free: {},
   premium: { examination: [6, DAY_MS], ritual: [3, WEEK_MS], revise: [3, DAY_MS], chat: [15, DAY_MS] },
 };
 const AI_PER_MINUTE = 10;
@@ -316,6 +317,7 @@ const routes = {
   'POST /api/examinations': async (req, res, body) => {
     const user = requireVerifiedUser(req, res);
     if (!user) return;
+    if (!user.is_premium) return send(res, 402, { error: 'Photo analysis is part of Maia Premium' });
     const kind = PHOTO_KINDS.includes(body.kind) ? body.kind : null;
     const photo = cleanPhoto(body.photo);
     if (!kind || !photo) return send(res, 400, { error: 'A skin, hair or teeth photo (JPEG/PNG/WebP, max 3MB) is required' });
@@ -336,8 +338,15 @@ const routes = {
     if (!user) return;
     const profile = getProfile(user.id);
     if (!profile) return send(res, 400, { error: 'Complete onboarding first' });
-    if (!takeAiCall(user, 'ritual')) return send(res, 429, AI_LIMIT);
-    const { ritual, source } = await generateRitual({ ...profile, photos: todaysPhotos(user.id) });
+    let ritual, source;
+    if (user.is_premium) {
+      if (!takeAiCall(user, 'ritual')) return send(res, 429, AI_LIMIT);
+      ({ ritual, source } = await generateRitual({ ...profile, photos: todaysPhotos(user.id) }));
+    } else {
+      // Free costs no AI: a starter ritual built from the onboarding answers. Capped only to stop row spam.
+      if (rateLimited(`starter:${user.id}`, 10, DAY_MS)) return send(res, 429, AI_LIMIT);
+      [ritual, source] = [starterRitual(profile), 'starter'];
+    }
     const id = crypto.randomUUID();
     run('INSERT INTO rituals (id, user_id, content, source, created_at) VALUES (?, ?, ?, ?, ?)', [id, user.id, JSON.stringify(ritual), source, new Date().toISOString()]);
     send(res, 200, { id, ritual, source, progress: [] });
