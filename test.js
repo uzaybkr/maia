@@ -264,7 +264,7 @@ try {
   // Budget = AI attempts per kind (premium: 3 new rituals a week, 2 used so far); rejected requests don't count.
   assert.equal((await call('POST', '/api/ritual/generate')).status, 200);
   assert.equal((await call('POST', '/api/ritual/generate')).status, 429, 'new rituals have a weekly budget');
-  assert.equal((await call('POST', '/api/examinations', { kind: 'hair', photo: PHOTO, consent: true })).status, 200, 'limits are per kind');
+  assert.equal((await call('POST', '/api/examinations', { kind: 'posture', photo: PHOTO, consent: true })).status, 200, 'limits are per kind (posture photo)');
   assert.equal(peek('SELECT COUNT(*) AS n FROM ai_calls WHERE user_id = ?', [userId]).n, 5, 'only allowed calls are logged');
   await call('POST', '/api/privacy/delete');
   assert.equal((await call('POST', '/api/ritual/generate')).status, 429, 'deleting history does not reset the AI budget');

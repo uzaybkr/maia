@@ -34,7 +34,7 @@ No data is used for tracking. All data below is linked to the user and used for 
 | Apple category | What we collect |
 |---|---|
 | Contact Info → Email Address | account |
-| User Content → Photos or Videos | skin/hair/teeth photos, deleted within 24h |
+| User Content → Photos or Videos | skin/hair/posture photos, deleted within 24h |
 | User Content → Other User Content | profile answers, examinations, chat messages |
 | Purchases → Purchase History | plan and renewal date |
 | Identifiers → User ID | internal ID shared with RevenueCat |

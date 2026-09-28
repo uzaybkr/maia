@@ -156,7 +156,7 @@ function ritualProgress(ritualId, day) {
 // results can't reset it, and restarts can't either. Check + insert run synchronously, so parallel requests can't
 // all slip past. MAIA_AI_DAILY_CAP is a global kill-switch across all users; set it to what your budget allows.
 // Limits are [max calls, window] per kind. A new ritual runs on the big model, so it's the scarce one; one check-in
-// is up to 3 photo analyses (skin, hair, teeth). Free has no AI at launch (a starter ritual costs nothing); a free
+// is up to 3 photo analyses (skin, hair, posture). Free has no AI at launch (a starter ritual costs nothing); a free
 // tier can be opened later by adding limits here, e.g. { examination: [3, WEEK_MS] }.
 const WEEK_MS = 7 * DAY_MS;
 const AI_LIMITS = {
@@ -309,7 +309,7 @@ const routes = {
     const user = requireUser(req, res);
     if (!user) return;
     const kind = url.searchParams.get('kind');
-    if (!PHOTO_KINDS.includes(kind)) return send(res, 400, { error: 'kind must be skin, hair or teeth' });
+    if (!PHOTO_KINDS.includes(kind)) return send(res, 400, { error: 'kind must be skin, hair or posture' });
     const rows = all('SELECT id, kind, metrics, summary, source, created_at FROM examinations WHERE user_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 120', [user.id, kind]);
     send(res, 200, { examinations: rows.map((r) => ({ ...r, metrics: JSON.parse(r.metrics) })) });
   },
@@ -320,7 +320,7 @@ const routes = {
     if (!user.is_premium) return send(res, 402, { error: 'Photo analysis is part of Maia Premium' });
     const kind = PHOTO_KINDS.includes(body.kind) ? body.kind : null;
     const photo = cleanPhoto(body.photo);
-    if (!kind || !photo) return send(res, 400, { error: 'A skin, hair or teeth photo (JPEG/PNG/WebP, max 3MB) is required' });
+    if (!kind || !photo) return send(res, 400, { error: 'A skin, hair or posture photo (JPEG/PNG/WebP, max 3MB) is required' });
     if (body.consent !== true) return send(res, 400, { error: 'Photo consent is required' });
     if (!takeAiCall(user, 'examination')) return send(res, 429, AI_LIMIT);
     const { examination, source } = await examinePhoto(kind, photo);

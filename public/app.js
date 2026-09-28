@@ -52,7 +52,7 @@ const ICONS = {
   chev: '<polyline points="9 18 15 12 9 6"/>',
   sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 17l.7 1.8 1.8.7-1.8.7L19 22l-.7-1.8-1.8-.7 1.8-.7z"/>',
   wave: '<path d="M3 8c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0"/><path d="M3 13c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0"/><path d="M3 18c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0"/>',
-  smile: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9.5h.01M15 9.5h.01"/>',
+  posture: '<circle cx="12" cy="4.5" r="2"/><path d="M12 7v7M12 14l-3 7M12 14l3 7M7 10h10"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>',
   leaf: '<path d="M11 20A7 7 0 019.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z"/><path d="M2 21c0-3 1.9-5.4 5.2-6"/>',
@@ -315,11 +315,11 @@ async function downscale(file, max = 1024) {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
-const KINDS = ['skin', 'hair', 'teeth'];
+const KINDS = ['skin', 'hair', 'posture'];
 const cap = (s) => s[0].toUpperCase() + s.slice(1).replace(/_/g, ' ');
 const localDay = (iso) => new Date(iso).toLocaleDateString('en-CA');
-const KIND_ICON = { skin: 'sparkle', hair: 'wave', teeth: 'smile' };
-const KIND_HINT = { skin: 'Soft daylight, bare skin if you can', hair: 'Hair down, natural light', teeth: 'A relaxed smile, facing the light' };
+const KIND_ICON = { skin: 'sparkle', hair: 'wave', posture: 'posture' };
+const KIND_HINT = { skin: 'Soft daylight, bare skin if you can', hair: 'Hair down, natural light', posture: 'Side view, standing naturally, in fitted clothes' };
 
 const POLICY_POINTS = `
   <ul>
@@ -433,7 +433,7 @@ async function submitPhotos(photos) {
 /* ---------- Onboarding: welcome + four guided questions ---------- */
 
 const GOALS = [
-  ['Clearer skin', 'sparkle'], ['Stronger hair', 'wave'], ['Brighter smile', 'smile'], ['More energy', 'sun'],
+  ['Clearer skin', 'sparkle'], ['Stronger hair', 'wave'], ['Better posture', 'posture'], ['More energy', 'sun'],
   ['Better sleep', 'moon'], ['Healthier eating', 'leaf'], ['Steadier routine', 'repeat'], ['Confidence', 'star'],
 ];
 const BUDGETS = [
@@ -446,7 +446,7 @@ const CLIMATES = ['Hot & dry', 'Hot & humid', 'Mild', 'Cold & dry', 'Changing se
 function renderOnboarding() {
   const d = (state.onboard ??= {
     step: 0, goals: [], preferences: '', sensitivities: '', budget: BUDGETS[1][0], region: '', climate: '',
-    photos: { skin: null, hair: null, teeth: null },
+    photos: { skin: null, hair: null, posture: null },
   });
   const go = (step) => { d.step = step; renderOnboarding(); };
   const top = (n) => `
@@ -559,13 +559,13 @@ function wirePhotoStep(wrap, d) {
 const premiumInvite = (button = '') => `
   <section class="glass stack">
     <div class="spread"><strong>Let Maia <em>see</em> you</strong><span class="pill">${icon('lock', 12)} Premium</span></div>
-    <p class="muted">She reads your skin, hair and smile from photos, writes your ritual personally and tracks the change day by day.</p>
+    <p class="muted">She reads your skin, hair and posture from photos, writes your ritual personally and tracks the change day by day.</p>
     ${button}
   </section>`;
 
 function renderCompose() {
   if (!state.user.is_premium) return nav('#/premium');
-  const d = { goals: [], photos: { skin: null, hair: null, teeth: null } };
+  const d = { goals: [], photos: { skin: null, hair: null, posture: null } };
   const wrap = mount(`
     ${photoStep(d, "Add one photo or all three. It's gone from our servers by tonight.")}
     <div class="actions"><button class="btn block" id="composeBtn">Compose my ritual</button></div>
@@ -1115,7 +1115,7 @@ async function renderPremium(status) {
     dev: 'Test upgrade: no payment was taken.',
   }[u.billing_source] || '';
   const benefits = [
-    ['camera', 'Daily photo check-ins', 'Skin, hair and smile, compared day by day and week by week'],
+    ['camera', 'Daily photo check-ins', 'Skin, hair and posture, compared day by day and week by week'],
     ['sparkle', 'A ritual written for you', 'Composed by Maia from your photos, not a template'],
     ['repeat', 'Revise in one tap', 'Simplify, swap or lower the cost'],
     ['chat', 'Talk with Maia', `Up to ${billing.limits.premium.chat[0]} questions a day, answered calmly`],
