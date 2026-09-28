@@ -19,5 +19,8 @@
     "@capacitor/cli": "^8.5.2",
     "@fontsource/cormorant-garamond": "^5.3.0",
     "@fontsource/manrope": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
