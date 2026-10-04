@@ -77,7 +77,7 @@ assert.equal(esc(`<i onx="a('b')">&`), '&lt;i onx=&quot;a(&#39;b&#39;)&quot;&gt;
 const TR = new Function('window', `${fs.readFileSync('public/i18n.js', 'utf8')}; return window.MAIA_TR;`)({});
 const shown = [...appSrc.matchAll(/\bt\((['"])((?:(?!\1).)*)\1/g)].map((m) => m[2]);
 assert.deepEqual(shown.filter((k) => !(k in TR)), [], 'every phrase in the app has Turkish');
-const holes = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join();
+const holes = (s) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort().join(); // using one twice is fine
 assert.deepEqual(Object.entries(TR).filter(([k, v]) => holes(k) !== holes(v)).map(([k]) => k), [], 'Turkish keeps every placeholder');
 const on = (d, h = 12) => ({ id: `${d}/${h}`, created: new Date(2026, 0, d, h).toISOString() });
 const exams3 = [on(15), on(15, 9), on(14), on(7)];
@@ -235,7 +235,7 @@ try {
   assert.equal((await call('POST', '/api/settings', { lang: 'xx' })).status, 400, 'only supported languages');
   assert.equal((await call('POST', '/api/settings', { lang: 'tr' })).status, 200);
   assert.equal((await call('GET', '/api/me')).data.lang, 'tr');
-  assert.match((await call('POST', '/api/ritual/generate')).data.ritual.summary, /başlangıç ritüeli/, 'starter ritual in Turkish');
+  assert.match((await call('POST', '/api/ritual/generate')).data.ritual.summary, /başlangıç rutini/, 'starter ritual in Turkish');
   await call('POST', '/api/settings', { lang: 'en' });
   await call('POST', '/api/subscribe');
 

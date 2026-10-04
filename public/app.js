@@ -780,7 +780,7 @@ async function renderShopping() {
     <section class="glass">
       <div class="eyebrow" style="margin-bottom:4px">${t('Start with')}</div>
       ${now.map(product).join('')}
-      ${total ? `<div class="total"><span>${t('Essentials')}</span><span class="price">${esc(money(total))}</span></div>` : ''}
+      ${total ? `<div class="total"><span>${t('Essentials total')}</span><span class="price">${esc(money(total))}</span></div>` : ''}
     </section>
     ${later.length ? `<section class="glass soft"><div class="eyebrow" style="margin-bottom:4px">${t("When you're ready")}</div>${later.map(product).join('')}</section>` : ''}
   ` : `
@@ -912,7 +912,7 @@ async function renderChat() {
     const wrap = mount(`
       <section class="hero">
         ${arch('', true)}
-        <div class="eyebrow">Maia · Premium</div>
+        <div class="eyebrow" lang="en">Maia · Premium</div>
         <h1>${t('Talk with <em>Maia</em>')}</h1>
         <p class="lede">${t('Ask about your ritual, swaps and progress. Calm answers, grounded in your own plan.')}</p>
       </section>
@@ -1124,7 +1124,7 @@ async function renderPremium(status) {
   const billing = await api('GET', '/api/billing/plans');
   if (status === 'success') {
     // Stripe redirects back before its webhook lands; wait briefly instead of showing "not premium" to a paying user.
-    mount(`${arch('', true)}<div class="eyebrow">Maia Premium</div><h1>${t('Activating your <em>ritual</em>')}</h1><p class="lede">${t('This usually takes a few seconds.')}</p>`, { noir: true, fill: true });
+    mount(`${arch('', true)}<div class="eyebrow" lang="en">Maia Premium</div><h1>${t('Activating your <em>ritual</em>')}</h1><p class="lede">${t('This usually takes a few seconds.')}</p>`, { noir: true, fill: true });
     state.user = await api('GET', '/api/me');
     for (let i = 0; i < 5 && !state.user.is_premium; i++) {
       await sleep(2000);
@@ -1159,7 +1159,7 @@ async function renderPremium(status) {
     <div class="spread"><button class="icon-btn" id="closeBtn" aria-label="${t('Close')}">${icon('close')}</button><span></span></div>
     <section class="hero" style="padding-top:0">
       ${arch('', true)}
-      <div class="eyebrow">Maia Premium</div>
+      <div class="eyebrow" lang="en">Maia Premium</div>
       <h1 class="display">${t(u.is_premium ? 'Your ritual, <em>in full.</em>' : 'The full ritual, <em>every day.</em>')}</h1>
     </section>
     <div class="rule"></div>
@@ -1255,7 +1255,7 @@ async function renderPremium(status) {
 /* ---------- Router ---------- */
 
 function renderLoading() {
-  mount(`${arch('sm', true)}<div class="eyebrow">Maia</div>`, { fill: true });
+  mount(`${arch('sm', true)}<div class="eyebrow" lang="en">Maia</div>`, { fill: true });
 }
 
 function renderError(message) {

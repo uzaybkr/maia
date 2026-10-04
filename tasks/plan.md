@@ -12,7 +12,7 @@ Source requirements: user request 2026-09-25 + `founder-pack/maia-prd.md` (P0 su
 | iOS/Android payments | Native in-app purchase through RevenueCat (`@revenuecat/purchases-capacitor`) + webhook | Apple 3.1.1 / Google Play billing policy require store billing for digital subscriptions; RevenueCat handles receipt validation for both stores |
 | Email verification | Resend REST API; without a key, the verify link is printed to the server log | Runs today, real email later |
 | Native wrapper | Capacitor 8, web assets bundled into the app (not a remote URL) | One codebase for 3 apps; bundled assets reduce App Store 4.2 "web wrapper" rejection risk |
-| App ID | `com.aethercorp.maia` | Confirmed 2026-09-28 (Aether Corp). Permanent once published |
+| App ID | `com.aethercorp.maia` | To revisit: the app will be registered in Özlem's name (2026-10-04). Permanent once published |
 | Prices | Monthly $14.99, Annual $119.99 (display placeholders) | Real prices live in Stripe / App Store Connect / Play Console |
 
 ## Dependency graph
