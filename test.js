@@ -168,6 +168,10 @@ try {
   assert.equal((await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{"email":"a@b.co","password":"x"}' })).status, 415, 'non-JSON POST rejected (login CSRF)');
   assert.equal((await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'x'.repeat(5 * 1024 * 1024) })).status, 413, 'oversized body rejected');
 
+  const demo = await fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.7' }, body: '{"email":"demo","password":"demo"}' });
+  assert.equal(demo.status, 200, 'local dev has a ready demo login');
+  assert.equal((await demo.json()).email_verified, true, 'demo skips email confirmation');
+
   const ADULT = { age_confirmed: true };
   assert.equal((await call('POST', '/api/signup', { email: 'a@b.co', password: 'short', ...ADULT })).status, 400);
   assert.equal((await call('POST', '/api/signup', { email: 'a@b.co', password: 'longenough1' })).status, 400, 'T5: 18+ confirmation required');

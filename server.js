@@ -522,6 +522,14 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Local-only demo login (demo / demo) to try the app without signing up. Never created in production, where a known
+// password would be an open door.
+if (!PROD && !get("SELECT 1 AS x FROM users WHERE email = 'demo'")) {
+  const now = new Date().toISOString();
+  run('INSERT INTO users (id, email, password_hash, created_at, age_confirmed_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [crypto.randomUUID(), 'demo', await hashPassword('demo'), now, now, now]);
+}
+
 // Photos expire at the end of each user's local day; sweep every minute so none outlives it by more than that.
 housekeeping();
 setInterval(housekeeping, 60 * 1000).unref();
@@ -529,5 +537,6 @@ setInterval(housekeeping, 60 * 1000).unref();
 server.listen(PORT, () => {
   console.log(`Maia running at http://localhost:${PORT}${PROD ? ' (production)' : ''}`);
   if (DEV_LINKS) console.log('Email: not configured (set RESEND_API_KEY). Confirmation links are shown in the app instead.');
+  if (!PROD) console.log('Demo login: demo / demo');
   console.log(process.env.ANTHROPIC_API_KEY ? 'AI mode: live Claude calls' : 'AI mode: fallback heuristics (set ANTHROPIC_API_KEY for real generation)');
 });
