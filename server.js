@@ -103,6 +103,7 @@ const meBody = (u) => ({
   plan: u.plan || null,
   premium_until: u.premium_until || null,
   billing_source: u.billing_source || null,
+  lang: u.lang || 'en',
 });
 
 // Native apps can't use the HttpOnly cookie across origins, so they get the session id in the body instead.
@@ -117,7 +118,7 @@ const DEV_LINKS = !PROD && !emailEnabled;
 
 async function issueVerification(user) {
   const link = `${APP_URL}/verify?token=${createToken(user.id, 'verify')}`;
-  await sendVerificationEmail(user.email, link).catch((err) => console.error('[mail]', err.message));
+  await sendVerificationEmail(user.email, link, user.lang).catch((err) => console.error('[mail]', err.message));
   return DEV_LINKS ? { dev_verify_url: link } : {};
 }
 
@@ -128,6 +129,7 @@ function clientIp(req) {
 }
 
 const TOO_MANY = { error: 'Too many attempts, try again later' };
+const LANGS = new Set(['en', 'tr']); // the app's languages; Maia writes rituals, notes and replies in the user's
 
 function getProfile(userId) {
   const row = get('SELECT data FROM profiles WHERE user_id = ?', [userId]);
@@ -200,7 +202,8 @@ const routes = {
     const now = new Date().toISOString();
     const hash = await hashPassword(password);
     try {
-      run('INSERT INTO users (id, email, password_hash, created_at, age_confirmed_at) VALUES (?, ?, ?, ?, ?)', [id, email, hash, now, now]);
+      run('INSERT INTO users (id, email, password_hash, created_at, age_confirmed_at, lang) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, email, hash, now, now, LANGS.has(body.lang) ? body.lang : 'en']);
     } catch (err) {
       if (/UNIQUE/.test(err.message)) return send(res, 409, { error: 'Account already exists' }); // lost a concurrent-signup race
       throw err;
@@ -246,11 +249,11 @@ const routes = {
   'POST /api/password/forgot': async (req, res, body) => {
     const email = String(body.email || '').trim().toLowerCase().slice(0, 254);
     if (rateLimited(`forgot:${clientIp(req)}`)) return send(res, 429, TOO_MANY);
-    const user = get('SELECT id, email FROM users WHERE email = ?', [email]);
+    const user = get('SELECT id, email, lang FROM users WHERE email = ?', [email]);
     // Past the per-email cap, answer the same but send nothing: the user's existing links stay valid.
     if (user && !rateLimited(`forgot:${email}`, 5, 60 * 60 * 1000)) {
       const link = `${APP_URL}/#/reset?token=${createToken(user.id, 'reset')}`;
-      await sendPasswordResetEmail(user.email, link).catch((err) => console.error('[mail]', err.message));
+      await sendPasswordResetEmail(user.email, link, user.lang).catch((err) => console.error('[mail]', err.message));
     }
     send(res, 200, { ok: true }); // same answer whether or not the account exists
   },
@@ -278,6 +281,14 @@ const routes = {
     const user = requireUser(req, res);
     if (!user) return;
     send(res, 200, meBody(user));
+  },
+
+  'POST /api/settings': async (req, res, body) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!LANGS.has(body.lang)) return send(res, 400, { error: 'Unsupported language' });
+    run('UPDATE users SET lang = ? WHERE id = ?', [body.lang, user.id]);
+    send(res, 200, { lang: body.lang });
   },
 
   'POST /api/onboarding': async (req, res, body) => {
@@ -323,7 +334,7 @@ const routes = {
     if (!kind || !photo) return send(res, 400, { error: 'A skin, hair or posture photo (JPEG/PNG/WebP, max 3MB) is required' });
     if (body.consent !== true) return send(res, 400, { error: 'Photo consent is required' });
     if (!takeAiCall(user, 'examination')) return send(res, 429, AI_LIMIT);
-    const { examination, source } = await examinePhoto(kind, photo);
+    const { examination, source } = await examinePhoto(kind, photo, user.lang);
     if (!examination) return send(res, 503, { error: "Maia couldn't analyze this photo right now. Please try again in a few minutes." });
     // Sealed and kept only until the end of the user's local day, then purged; the examination is what we keep.
     const photoExpiresAt = storePhoto(user.id, kind, photo, body.tzOffset);
@@ -341,11 +352,11 @@ const routes = {
     let ritual, source;
     if (user.is_premium) {
       if (!takeAiCall(user, 'ritual')) return send(res, 429, AI_LIMIT);
-      ({ ritual, source } = await generateRitual({ ...profile, photos: todaysPhotos(user.id) }));
+      ({ ritual, source } = await generateRitual({ ...profile, photos: todaysPhotos(user.id) }, null, user.lang));
     } else {
       // Free costs no AI: a starter ritual built from the onboarding answers. Capped only to stop row spam.
       if (rateLimited(`starter:${user.id}`, 10, DAY_MS)) return send(res, 429, AI_LIMIT);
-      ritual = starterRitual(profile);
+      ritual = starterRitual(profile, user.lang);
       source = 'starter';
     }
     const id = crypto.randomUUID();
@@ -373,7 +384,7 @@ const routes = {
     const action = ['simplify', 'swap', 'lower_cost'].includes(body.action) ? body.action : 'simplify';
     const note = String(body.note || '').slice(0, 300);
     // Revisions work from the current ritual text; photos are not re-sent to the AI provider.
-    const { ritual, source } = await generateRitual({ ...profile, photos: {} }, { action, note, current: JSON.parse(current.content) });
+    const { ritual, source } = await generateRitual({ ...profile, photos: {} }, { action, note, current: JSON.parse(current.content) }, user.lang);
     const id = crypto.randomUUID();
     run('INSERT INTO rituals (id, user_id, content, source, created_at) VALUES (?, ?, ?, ?, ?)', [id, user.id, JSON.stringify(ritual), source, new Date().toISOString()]);
     send(res, 200, { id, ritual, source, progress: [] });
@@ -409,7 +420,7 @@ const routes = {
     const ritual = ritualRow ? JSON.parse(ritualRow.content) : null;
     const history = recentMessages(user.id, 20);
     run('INSERT INTO messages (id, user_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)', [crypto.randomUUID(), user.id, 'user', message, new Date().toISOString()]);
-    const { reply, source } = await generateChatReply(profile, ritual, history, message);
+    const { reply, source } = await generateChatReply(profile, ritual, history, message, user.lang);
     run('INSERT INTO messages (id, user_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)', [crypto.randomUUID(), user.id, 'assistant', reply, new Date().toISOString()]);
     send(res, 200, { reply, source });
   },

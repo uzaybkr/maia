@@ -72,6 +72,13 @@ const appSrc = fs.readFileSync('public/app.js', 'utf8');
 const grab = (re) => appSrc.match(re)[0];
 const { esc, pickBaseline } = new Function(`${grab(/const localDay = .*\n/)}${grab(/function esc\([\s\S]*?\n}\n/)}${grab(/function pickBaseline\([\s\S]*?\n}\n/)}return { esc, pickBaseline };`)();
 assert.equal(esc(`<i onx="a('b')">&`), '&lt;i onx=&quot;a(&#39;b&#39;)&quot;&gt;&amp;', 'esc neutralizes HTML');
+
+// Every fixed phrase the app shows has a Turkish version that keeps the same {placeholders}.
+const TR = new Function('window', `${fs.readFileSync('public/i18n.js', 'utf8')}; return window.MAIA_TR;`)({});
+const shown = [...appSrc.matchAll(/\bt\((['"])((?:(?!\1).)*)\1/g)].map((m) => m[2]);
+assert.deepEqual(shown.filter((k) => !(k in TR)), [], 'every phrase in the app has Turkish');
+const holes = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join();
+assert.deepEqual(Object.entries(TR).filter(([k, v]) => holes(k) !== holes(v)).map(([k]) => k), [], 'Turkish keeps every placeholder');
 const on = (d, h = 12) => ({ id: `${d}/${h}`, created: new Date(2026, 0, d, h).toISOString() });
 const exams3 = [on(15), on(15, 9), on(14), on(7)];
 assert.equal(pickBaseline(exams3, 'day').id, '14/12', 'same-day exam is not a day baseline');
@@ -223,6 +230,13 @@ try {
   assert.equal((await call('POST', '/api/chat', { message: 'hi' })).status, 402, 'free users gated');
   assert.equal(peek('SELECT COUNT(*) AS n FROM ai_calls').n, 0, 'free members trigger no AI calls');
   assert.equal(peekPhotos('SELECT COUNT(*) AS n FROM photos').n, 0, 'free members store no photos');
+
+  /* language: Maia writes in the language the app is used in */
+  assert.equal((await call('POST', '/api/settings', { lang: 'xx' })).status, 400, 'only supported languages');
+  assert.equal((await call('POST', '/api/settings', { lang: 'tr' })).status, 200);
+  assert.equal((await call('GET', '/api/me')).data.lang, 'tr');
+  assert.match((await call('POST', '/api/ritual/generate')).data.ritual.summary, /başlangıç ritüeli/, 'starter ritual in Turkish');
+  await call('POST', '/api/settings', { lang: 'en' });
   await call('POST', '/api/subscribe');
 
   /* T1: analyze, keep examination, photo sealed in its own DB until end of local day */

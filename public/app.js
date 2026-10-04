@@ -5,6 +5,20 @@ const CONFIG = window.MAIA_CONFIG || {};
 const NATIVE = !!window.Capacitor?.isNativePlatform?.();
 const PLATFORM = window.Capacitor?.getPlatform?.() || 'web';
 
+// Turkish when the phone is set to Turkish (or chosen under Profile → Language), English otherwise. Translations live
+// in i18n.js keyed by the English text, so anything untranslated simply shows in English.
+const LANG = prefGet('maia.lang') || (/^tr\b/i.test(navigator.language || '') ? 'tr' : 'en');
+const LOCALE = LANG === 'tr' ? 'tr-TR' : undefined;
+document.documentElement.lang = LANG;
+function t(text, vars = {}) {
+  const s = (LANG === 'tr' && window.MAIA_TR?.[text]) || text;
+  return s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+}
+function setLang(lang) {
+  prefSet('maia.lang', lang);
+  location.reload(); // the router tells the server on the next load, so Maia writes in this language too
+}
+
 // ponytail: native session token lives in WebView localStorage (app-sandboxed). Move to Keychain/Keystore
 // via a secure-storage plugin before handling anything more sensitive than a revocable session id.
 async function api(method, url, body) {
@@ -17,7 +31,7 @@ async function api(method, url, body) {
   }
   const res = await fetch((NATIVE ? CONFIG.apiBase : '') + url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || res.statusText), { status: res.status, data });
+  if (!res.ok) throw Object.assign(new Error(t(data.error || res.statusText)), { status: res.status, data });
   if (data.token) prefSet('maia.token', data.token);
   return data;
 }
@@ -76,6 +90,7 @@ const ICONS = {
   simplify: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   swap: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/>',
   tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L2 12V2h10l8.6 8.6a2 2 0 010 2.8z"/><path d="M7 7h.01"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>',
 };
 const icon = (name, size = 20) => `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
@@ -96,9 +111,13 @@ function toast(message) {
   let t = document.querySelector('.toast');
   if (!t) { t = el('<div class="toast" role="status" aria-live="polite"></div>'); document.body.appendChild(t); }
   t.textContent = message;
-  requestAnimationFrame(() => t.classList.add('show'));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 3800);
+  // Start the hide timer once it's actually shown: a frame can be delayed (app in background), leaving it stuck.
+  requestAnimationFrame(() => {
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 3800);
+  });
 }
 
 const TABS = [['#/home', 'Ritual', 'sparkle'], ['#/progress', 'Progress', 'trend'], ['#/shopping', 'Shop', 'bag'], ['#/chat', 'Maia', 'chat'], ['#/account', 'You', 'user']];
@@ -106,7 +125,7 @@ const TABS = [['#/home', 'Ritual', 'sparkle'], ['#/progress', 'Progress', 'trend
 function tabbar(active) {
   const bar = el('<nav class="tabbar" aria-label="Main"></nav>');
   for (const [hash, label, ic] of TABS) {
-    const btn = el(`<button type="button" ${hash === active ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${label}</span></button>`);
+    const btn = el(`<button type="button" ${hash === active ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></button>`);
     btn.addEventListener('click', () => nav(hash));
     bar.appendChild(btn);
   }
@@ -128,33 +147,37 @@ function mount(html, { tab, noir = false, bare = false, fill = false } = {}) {
   return wrap;
 }
 
-const fmtDay = (iso) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+const fmtDay = (iso) => new Date(iso).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long' });
 
 /* ---------- Arrival: sign in, verify, reset ---------- */
 
 function renderAuth() {
   let mode = prefGet('maia.returning') === '1' ? 'login' : 'signup';
   const wrap = mount(`
+    <div class="seg mini lang-pick" role="group" aria-label="Language">
+      <button type="button" data-lang="tr" aria-pressed="${LANG === 'tr'}">Türkçe</button>
+      <button type="button" data-lang="en" aria-pressed="${LANG === 'en'}">English</button>
+    </div>
     <section class="hero">
       ${arch('lg', true)}
-      <div class="eyebrow">Maia · Self-care concierge</div>
-      <h1 class="display">A calmer ritual, <em>made for you.</em></h1>
-      <p class="lede">Your goals, preferences and photos, composed into one quiet daily ritual.</p>
+      <div class="eyebrow">${t('Maia · Self-care concierge')}</div>
+      <h1 class="display">${t('A calmer ritual, <em>made for you.</em>')}</h1>
+      <p class="lede">${t('Your goals, preferences and photos, composed into one quiet daily ritual.')}</p>
     </section>
-    <div class="seg" role="group" aria-label="Account">
-      <button type="button" data-mode="login">Log in</button>
-      <button type="button" data-mode="signup">Create account</button>
+    <div class="seg" role="group" aria-label="${t('Account')}">
+      <button type="button" data-mode="login">${t('Log in')}</button>
+      <button type="button" data-mode="signup">${t('Create account')}</button>
     </div>
     <form class="glass stack" id="authForm" novalidate>
-      <label class="field"><span>Email</span><input class="input" type="email" id="email" autocomplete="email" placeholder="you@example.com"></label>
-      <label class="field"><span>Password</span><input class="input" type="password" id="password" placeholder="At least 8 characters"></label>
+      <label class="field"><span>${t('Email')}</span><input class="input" type="email" id="email" autocomplete="email" placeholder="${t('you@example.com')}"></label>
+      <label class="field"><span>${t('Password')}</span><input class="input" type="password" id="password" placeholder="${t('At least 8 characters')}"></label>
       <div class="stack" id="signupExtras">
-        <label class="check"><input type="checkbox" id="age"><span class="box">${icon('check', 14)}</span><span>I confirm I am 18 or older</span></label>
-        <p class="fine">By creating an account you agree to the <a href="/terms.html">Terms of Use</a> and <a href="/privacy.html">Privacy Policy</a>.</p>
+        <label class="check"><input type="checkbox" id="age"><span class="box">${icon('check', 14)}</span><span>${t('I confirm I am 18 or older')}</span></label>
+        <p class="fine">${t('By creating an account you agree to the <a href="/terms.html">Terms of Use</a> and <a href="/privacy.html">Privacy Policy</a>.')}</p>
       </div>
       <p class="error" id="err" role="alert" hidden></p>
       <button class="btn block" type="submit" id="submitBtn"></button>
-      <a class="fine center" href="#/forgot" id="forgotLink">Forgot your password?</a>
+      <a class="fine center" href="#/forgot" id="forgotLink">${t('Forgot your password?')}</a>
     </form>
   `, { noir: true });
 
@@ -163,11 +186,12 @@ function renderAuth() {
     wrap.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
     wrap.querySelector('#signupExtras').hidden = m !== 'signup';
     wrap.querySelector('#forgotLink').hidden = m !== 'login';
-    wrap.querySelector('#submitBtn').textContent = m === 'login' ? 'Log in' : 'Create account';
+    wrap.querySelector('#submitBtn').textContent = t(m === 'login' ? 'Log in' : 'Create account');
     wrap.querySelector('#password').autocomplete = m === 'login' ? 'current-password' : 'new-password';
   };
   setMode(mode);
   wrap.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  wrap.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => b.dataset.lang !== LANG && setLang(b.dataset.lang)));
 
   const err = wrap.querySelector('#err');
   wrap.querySelector('#authForm').addEventListener('submit', async (e) => {
@@ -180,6 +204,7 @@ function renderAuth() {
         email: wrap.querySelector('#email').value.trim(),
         password: wrap.querySelector('#password').value,
         age_confirmed: mode === 'signup' ? wrap.querySelector('#age').checked : undefined,
+        lang: LANG,
       });
       prefSet('maia.returning', '1');
       state.user = data;
@@ -206,16 +231,16 @@ async function logout() {
 
 function renderForgot() {
   const wrap = mount(`
-    <button class="icon-btn" id="backBtn" aria-label="Back">${icon('back')}</button>
+    <button class="icon-btn" id="backBtn" aria-label="${t('Back')}">${icon('back')}</button>
     <section class="hero">
       ${arch('sm')}
-      <div class="eyebrow">Account</div>
-      <h1>Reset your <em>password</em></h1>
-      <p class="lede">Enter your email and we'll send a link to choose a new one.</p>
+      <div class="eyebrow">${t('Account')}</div>
+      <h1>${t('Reset your <em>password</em>')}</h1>
+      <p class="lede">${t("Enter your email and we'll send a link to choose a new one.")}</p>
     </section>
     <form class="glass stack" id="form" novalidate>
-      <label class="field"><span>Email</span><input class="input" type="email" id="email" autocomplete="email"></label>
-      <button class="btn block" type="submit">Send reset link</button>
+      <label class="field"><span>${t('Email')}</span><input class="input" type="email" id="email" autocomplete="email"></label>
+      <button class="btn block" type="submit">${t('Send reset link')}</button>
       <p class="fine" id="msg" role="status"></p>
     </form>
   `, { noir: true });
@@ -225,7 +250,7 @@ function renderForgot() {
     const msg = wrap.querySelector('#msg');
     try {
       await api('POST', '/api/password/forgot', { email: wrap.querySelector('#email').value.trim() });
-      msg.textContent = "If an account exists for that email, a reset link is on its way. It expires in one hour.";
+      msg.textContent = t('If an account exists for that email, a reset link is on its way. It expires in one hour.');
     } catch (e2) {
       msg.textContent = e2.message;
     }
@@ -236,14 +261,14 @@ function renderReset(token) {
   const wrap = mount(`
     <section class="hero">
       ${arch('sm')}
-      <div class="eyebrow">Account</div>
-      <h1>Choose a new <em>password</em></h1>
-      <p class="lede">Saving it signs you out on every device.</p>
+      <div class="eyebrow">${t('Account')}</div>
+      <h1>${t('Choose a new <em>password</em>')}</h1>
+      <p class="lede">${t('Saving it signs you out on every device.')}</p>
     </section>
     <form class="glass stack" id="form" novalidate>
-      <label class="field"><span>New password</span><input class="input" type="password" id="password" autocomplete="new-password" placeholder="At least 8 characters"></label>
+      <label class="field"><span>${t('New password')}</span><input class="input" type="password" id="password" autocomplete="new-password" placeholder="${t('At least 8 characters')}"></label>
       <p class="error" id="err" role="alert" hidden></p>
-      <button class="btn block" type="submit">Save password</button>
+      <button class="btn block" type="submit">${t('Save password')}</button>
     </form>
   `, { noir: true });
   wrap.querySelector('#form').addEventListener('submit', async (e) => {
@@ -252,7 +277,7 @@ function renderReset(token) {
     try {
       await api('POST', '/api/password/reset', { token, password: wrap.querySelector('#password').value });
       forgetSession();
-      toast('Password updated. Log in with your new password.');
+      toast(t('Password updated. Log in with your new password.'));
       nav('#/auth');
     } catch (e2) {
       err.textContent = e2.message;
@@ -265,28 +290,28 @@ function renderVerifyEmail(failed) {
   const wrap = mount(`
     <section class="hero">
       ${arch('', true)}
-      <div class="eyebrow">One last step</div>
-      <h1>Check your <em>inbox</em></h1>
-      <p class="lede">We sent a confirmation link to <strong>${esc(state.user.email)}</strong>. Open it on any device, then come back here.</p>
+      <div class="eyebrow">${t('One last step')}</div>
+      <h1>${t('Check your <em>inbox</em>')}</h1>
+      <p class="lede">${t('We sent a confirmation link to <strong>{email}</strong>. Open it on any device, then come back here.', { email: esc(state.user.email) })}</p>
     </section>
-    ${failed ? '<p class="error center" role="alert">That link is invalid or has expired. Send yourself a new one below.</p>' : ''}
+    ${failed ? `<p class="error center" role="alert">${t('That link is invalid or has expired. Send yourself a new one below.')}</p>` : ''}
     ${state.devVerifyUrl ? `
       <div class="glass dev-note stack">
-        <p class="fine"><strong>Development mode:</strong> email sending isn't connected yet, so no email was sent. Confirm here instead.</p>
-        <a class="btn block" href="${esc(state.devVerifyUrl)}">Confirm my email now</a>
+        <p class="fine">${t("<strong>Development mode:</strong> email sending isn't connected yet, so no email was sent. Confirm here instead.")}</p>
+        <a class="btn block" href="${esc(state.devVerifyUrl)}">${t('Confirm my email now')}</a>
       </div>` : ''}
     <div class="stack">
-      <button class="btn ${state.devVerifyUrl ? 'ghost' : ''} block" id="checkBtn">I've confirmed, continue</button>
-      <button class="btn ghost block" id="resendBtn">${icon('mail', 18)} Send the email again</button>
+      <button class="btn ${state.devVerifyUrl ? 'ghost' : ''} block" id="checkBtn">${t("I've confirmed, continue")}</button>
+      <button class="btn ghost block" id="resendBtn">${icon('mail', 18)} ${t('Send the email again')}</button>
       <p class="fine center" id="msg" role="status"></p>
-      <button class="btn quiet" id="logoutBtn">Use a different account</button>
+      <button class="btn quiet" id="logoutBtn">${t('Use a different account')}</button>
     </div>
   `, { noir: true });
   const msg = wrap.querySelector('#msg');
   wrap.querySelector('#checkBtn').addEventListener('click', async () => {
     state.user = await api('GET', '/api/me');
     if (state.user.email_verified) return nav('#/home');
-    msg.textContent = 'Not confirmed yet. Check your inbox and spam folder.';
+    msg.textContent = t('Not confirmed yet. Check your inbox and spam folder.');
   });
   wrap.querySelector('#resendBtn').addEventListener('click', async () => {
     try {
@@ -295,7 +320,7 @@ function renderVerifyEmail(failed) {
         state.devVerifyUrl = data.dev_verify_url;
         return renderVerifyEmail(false);
       }
-      msg.textContent = 'Sent. The new link replaces any earlier one.';
+      msg.textContent = t('Sent. The new link replaces any earlier one.');
     } catch (e) {
       msg.textContent = e.message;
     }
@@ -320,17 +345,18 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1).replace(/_/g, ' ');
 const localDay = (iso) => new Date(iso).toLocaleDateString('en-CA');
 const KIND_ICON = { skin: 'sparkle', hair: 'wave', posture: 'posture' };
 const KIND_HINT = { skin: 'Soft daylight, bare skin if you can', hair: 'Hair down, natural light', posture: 'Side view, standing naturally, in fitted clothes' };
+const kindName = (k) => t(cap(k));
 
 const POLICY_POINTS = `
   <ul>
-    <li>Analyzed to create your written examination and today's ritual</li>
-    <li>Kept encrypted only until the end of your day, then permanently deleted</li>
-    <li>Never stored long-term, never in backups, never used to train AI</li>
-    <li>Want to compare photos over time? Keep a copy on this phone</li>
+    <li>${t("Analyzed to create your written examination and today's ritual")}</li>
+    <li>${t('Kept encrypted only until the end of your day, then permanently deleted')}</li>
+    <li>${t('Never stored long-term, never in backups, never used to train AI')}</li>
+    <li>${t('Want to compare photos over time? Keep a copy on this phone')}</li>
   </ul>
-  <p class="fine" style="margin-top:10px">Photos are processed by our AI provider under its own data terms.</p>`;
-const policyCard = () => `<div class="glass policy"><div class="policy-head">${icon('shield')}<strong>How Maia handles your photos</strong></div>${POLICY_POINTS}</div>`;
-const policyDetails = () => `<details class="glass policy"><summary>${icon('shield')} How Maia handles your photos</summary>${POLICY_POINTS}</details>`;
+  <p class="fine" style="margin-top:10px">${t('Photos are processed by our AI provider under its own data terms.')}</p>`;
+const policyCard = () => `<div class="glass policy"><div class="policy-head">${icon('shield')}<strong>${t('How Maia handles your photos')}</strong></div>${POLICY_POINTS}</div>`;
+const policyDetails = () => `<details class="glass policy"><summary>${icon('shield')} ${t('How Maia handles your photos')}</summary>${POLICY_POINTS}</details>`;
 
 // Photos the user chose to keep live only in this device's IndexedDB, tagged by account id so a shared device doesn't mix accounts.
 // ponytail: WebView IndexedDB can be evicted under storage pressure on iOS; move to Capacitor Filesystem if users report loss.
@@ -371,10 +397,10 @@ const deviceDB = {
 function photoCapture(kind, photos) {
   const box = el(`
     <div class="capture">
-      <div class="capture-head"><span class="ic">${icon(KIND_ICON[kind])}</span><div><strong>${cap(kind)}</strong><span>${KIND_HINT[kind]}</span></div></div>
-      <label class="check"><input type="checkbox" class="consent"><span class="box">${icon('check', 14)}</span><span>I agree Maia may analyze this photo and delete it by the end of my day</span></label>
-      <div class="capture-preview" hidden><img alt="${cap(kind)} photo preview"><span class="fine">Ready. Deleted from our servers by the end of today.</span></div>
-      <label class="btn ghost small file-btn is-disabled">${icon('camera', 16)}<span class="file-label">Choose photo</span><input type="file" accept="image/*" class="file" disabled></label>
+      <div class="capture-head"><span class="ic">${icon(KIND_ICON[kind])}</span><div><strong>${kindName(kind)}</strong><span>${t(KIND_HINT[kind])}</span></div></div>
+      <label class="check"><input type="checkbox" class="consent"><span class="box">${icon('check', 14)}</span><span>${t('I agree Maia may analyze this photo and delete it by the end of my day')}</span></label>
+      <div class="capture-preview" hidden><img alt="${t('{kind} photo preview', { kind: kindName(kind) })}"><span class="fine">${t('Ready. Deleted from our servers by the end of today.')}</span></div>
+      <label class="btn ghost small file-btn is-disabled">${icon('camera', 16)}<span class="file-label">${t('Choose photo')}</span><input type="file" accept="image/*" class="file" disabled></label>
     </div>
   `);
   const consent = box.querySelector('.consent');
@@ -391,7 +417,7 @@ function photoCapture(kind, photos) {
       photos[kind] = null;
       file.value = '';
       preview.hidden = true;
-      box.querySelector('.file-label').textContent = 'Choose photo';
+      box.querySelector('.file-label').textContent = t('Choose photo');
     }
   });
   file.addEventListener('change', async () => {
@@ -399,7 +425,7 @@ function photoCapture(kind, photos) {
     photos[kind] = await downscale(file.files[0]);
     preview.querySelector('img').src = photos[kind];
     preview.hidden = false;
-    box.querySelector('.file-label').textContent = 'Retake';
+    box.querySelector('.file-label').textContent = t('Retake');
   });
   sync();
   return box;
@@ -409,8 +435,8 @@ function keepOnDeviceToggle() {
   const on = prefGet('maia.keepOnDevice') === '1';
   const box = el(`
     <div class="stack">
-      <label class="switch-row"><span><strong>Keep a copy on this phone</strong><small>For side-by-side comparison. Never uploaded again.</small></span><input type="checkbox" class="keep" ${on ? 'checked' : ''}><span class="switch"></span></label>
-      <p class="note warn" ${on ? '' : 'hidden'}>Saved only on this device. Anyone with access to it can see them. Delete them anytime in Progress.</p>
+      <label class="switch-row"><span><strong>${t('Keep a copy on this phone')}</strong><small>${t('For side-by-side comparison. Never uploaded again.')}</small></span><input type="checkbox" class="keep" ${on ? 'checked' : ''}><span class="switch"></span></label>
+      <p class="note warn" ${on ? '' : 'hidden'}>${t('Saved only on this device. Anyone with access to it can see them. Delete them anytime in Progress.')}</p>
     </div>
   `);
   box.querySelector('.keep').addEventListener('change', (e) => {
@@ -451,8 +477,8 @@ function renderOnboarding() {
   const go = (step) => { d.step = step; renderOnboarding(); };
   const top = (n) => `
     <div class="wizard-top">
-      <button class="icon-btn" data-back aria-label="Back">${icon('back')}</button>
-      <div class="steps" aria-label="Step ${n} of 4">${[1, 2, 3, 4].map((i) => `<span class="${i <= n ? 'on' : ''}"></span>`).join('')}</div>
+      <button class="icon-btn" data-back aria-label="${t('Back')}">${icon('back')}</button>
+      <div class="steps" aria-label="${t('Step {n} of 4', { n })}">${[1, 2, 3, 4].map((i) => `<span class="${i <= n ? 'on' : ''}"></span>`).join('')}</div>
     </div>`;
 
   let wrap;
@@ -460,21 +486,21 @@ function renderOnboarding() {
     wrap = mount(`
       <section class="hero" style="padding-top:18px">
         ${arch('lg', true)}
-        <div class="eyebrow">Welcome to Maia</div>
-        <h1 class="display">Let's compose your <em>first ritual.</em></h1>
-        <p class="lede">Four gentle questions, about three minutes. I'll take it from there.</p>
+        <div class="eyebrow">${t('Welcome to Maia')}</div>
+        <h1 class="display">${t("Let's compose your <em>first ritual.</em>")}</h1>
+        <p class="lede">${t("Four gentle questions, about three minutes. I'll take it from there.")}</p>
       </section>
-      <button class="btn block" data-next>Begin</button>
+      <button class="btn block" data-next>${t('Begin')}</button>
     `);
   } else if (d.step === 1) {
     wrap = mount(`
       ${top(1)}
-      ${maiaSays("Choose what you'd like to feel. I'll shape everything around it.")}
-      <h1>What would you like to <em>feel?</em></h1>
+      ${maiaSays(t("Choose what you'd like to feel. I'll shape everything around it."))}
+      <h1>${t('What would you like to <em>feel?</em>')}</h1>
       <div class="goal-grid">
-        ${GOALS.map(([g, ic]) => `<button type="button" class="goal" data-goal="${esc(g)}" aria-pressed="${d.goals.includes(g)}"><span class="goal-icon">${icon(ic, 18)}</span>${esc(g)}</button>`).join('')}
+        ${GOALS.map(([g, ic]) => `<button type="button" class="goal" data-goal="${esc(g)}" aria-pressed="${d.goals.includes(g)}"><span class="goal-icon">${icon(ic, 18)}</span>${esc(t(g))}</button>`).join('')}
       </div>
-      <div class="actions"><button class="btn block" data-next ${d.goals.length ? '' : 'disabled'}>Continue</button></div>
+      <div class="actions"><button class="btn block" data-next ${d.goals.length ? '' : 'disabled'}>${t('Continue')}</button></div>
     `);
     wrap.querySelectorAll('[data-goal]').forEach((b) => b.addEventListener('click', () => {
       const g = b.dataset.goal;
@@ -485,27 +511,27 @@ function renderOnboarding() {
   } else if (d.step === 2) {
     wrap = mount(`
       ${top(2)}
-      ${maiaSays('Tell me what you love and what to avoid. Skip anything you like.')}
-      <h1>A little about <em>you</em></h1>
+      ${maiaSays(t('Tell me what you love and what to avoid. Skip anything you like.'))}
+      <h1>${t('A little about <em>you</em>')}</h1>
       <div class="glass stack">
-        <label class="field"><span>What you love</span><textarea class="input" id="preferences" placeholder="Light textures, fragrance-free, quick routines…">${esc(d.preferences)}</textarea></label>
-        <label class="field"><span>What to avoid</span><textarea class="input" id="sensitivities" placeholder="Retinol, strong scents, dairy…">${esc(d.sensitivities)}</textarea></label>
+        <label class="field"><span>${t('What you love')}</span><textarea class="input" id="preferences" placeholder="${t('Light textures, fragrance-free, quick routines…')}">${esc(d.preferences)}</textarea></label>
+        <label class="field"><span>${t('What to avoid')}</span><textarea class="input" id="sensitivities" placeholder="${t('Retinol, strong scents, dairy…')}">${esc(d.sensitivities)}</textarea></label>
       </div>
-      <div class="actions"><button class="btn block" data-next>Continue</button></div>
+      <div class="actions"><button class="btn block" data-next>${t('Continue')}</button></div>
     `);
     const save = () => { d.preferences = wrap.querySelector('#preferences').value; d.sensitivities = wrap.querySelector('#sensitivities').value; };
     wrap.querySelectorAll('textarea').forEach((t) => t.addEventListener('input', save));
   } else if (d.step === 3) {
     wrap = mount(`
       ${top(3)}
-      ${maiaSays('So I suggest products that suit your budget, where you live and the air around you.')}
-      <h1>Budget and <em>climate</em></h1>
-      <div class="choice-list" role="radiogroup" aria-label="Monthly budget">
-        ${BUDGETS.map(([v, name, range]) => `<button type="button" class="choice" data-budget="${esc(v)}" aria-pressed="${d.budget === v}"><span><strong>${name}</strong><small>${range}</small></span><span class="radio"></span></button>`).join('')}
+      ${maiaSays(t('So I suggest products that suit your budget, where you live and the air around you.'))}
+      <h1>${t('Budget and <em>climate</em>')}</h1>
+      <div class="choice-list" role="radiogroup" aria-label="${t('Monthly budget')}">
+        ${BUDGETS.map(([v, name, range]) => `<button type="button" class="choice" data-budget="${esc(v)}" aria-pressed="${d.budget === v}"><span><strong>${t(name)}</strong><small>${t(range)}</small></span><span class="radio"></span></button>`).join('')}
       </div>
-      <label class="field"><span>Where you live</span><input class="input" id="region" placeholder="Dubai, UAE" value="${esc(d.region)}"></label>
-      <div class="field"><span>Your climate</span><div class="chips">${CLIMATES.map((c) => `<button type="button" class="chip" data-climate="${esc(c)}" aria-pressed="${d.climate === c}">${esc(c)}</button>`).join('')}</div></div>
-      <div class="actions"><button class="btn block" data-next>Continue</button></div>
+      <label class="field"><span>${t('Where you live')}</span><input class="input" id="region" placeholder="${t('Dubai, UAE')}" value="${esc(d.region)}"></label>
+      <div class="field"><span>${t('Your climate')}</span><div class="chips">${CLIMATES.map((c) => `<button type="button" class="chip" data-climate="${esc(c)}" aria-pressed="${d.climate === c}">${esc(t(c))}</button>`).join('')}</div></div>
+      <div class="actions"><button class="btn block" data-next>${t('Continue')}</button></div>
     `);
     wrap.querySelectorAll('[data-budget]').forEach((b) => b.addEventListener('click', () => {
       d.budget = b.dataset.budget;
@@ -519,10 +545,10 @@ function renderOnboarding() {
   } else if (!state.user.is_premium) {
     wrap = mount(`
       ${top(4)}
-      ${maiaSays("I'll begin with a ritual built from your answers. With Premium, I read your photos and write it just for you.")}
-      <h1>Your <em>starter</em> ritual</h1>
+      ${maiaSays(t("I'll begin with a ritual built from your answers. With Premium, I read your photos and write it just for you."))}
+      <h1>${t('Your <em>starter</em> ritual')}</h1>
       ${premiumInvite()}
-      <div class="actions"><button class="btn block" id="composeBtn">Compose my starter ritual</button></div>
+      <div class="actions"><button class="btn block" id="composeBtn">${t('Compose my starter ritual')}</button></div>
     `);
     wrap.querySelector('#composeBtn').addEventListener('click', () => { d.photos = {}; compose(d); });
   } else {
@@ -530,8 +556,8 @@ function renderOnboarding() {
       ${top(4)}
       ${photoStep(d, "Optional. A photo shows me where to start, and it's gone from our servers by tonight.")}
       <div class="actions">
-        <button class="btn block" id="composeBtn">Compose my ritual</button>
-        <button class="btn quiet" id="skipBtn">Skip photos for now</button>
+        <button class="btn block" id="composeBtn">${t('Compose my ritual')}</button>
+        <button class="btn quiet" id="skipBtn">${t('Skip photos for now')}</button>
       </div>
     `);
     wirePhotoStep(wrap, d);
@@ -544,8 +570,8 @@ function renderOnboarding() {
 
 // The "let me see" photo step, shared by onboarding and by new Premium members composing Maia's ritual later.
 const photoStep = (d, intro) => `
-  ${maiaSays(intro)}
-  <h1>Let me <em>see</em></h1>
+  ${maiaSays(t(intro))}
+  <h1>${t('Let me <em>see</em>')}</h1>
   ${policyCard()}
   <div class="glass" id="captures"></div>
   <div class="glass" id="keepSlot"></div>`;
@@ -558,8 +584,8 @@ function wirePhotoStep(wrap, d) {
 // What free members see where Premium's photo features would be. Free costs no AI at launch.
 const premiumInvite = (button = '') => `
   <section class="glass stack">
-    <div class="spread"><strong>Let Maia <em>see</em> you</strong><span class="pill">${icon('lock', 12)} Premium</span></div>
-    <p class="muted">She reads your skin, hair and posture from photos, writes your ritual personally and tracks the change day by day.</p>
+    <div class="spread"><strong>${t('Let Maia <em>see</em> you')}</strong><span class="pill">${icon('lock', 12)} Premium</span></div>
+    <p class="muted">${t('She reads your skin, hair and posture from photos, writes your ritual personally and tracks the change day by day.')}</p>
     ${button}
   </section>`;
 
@@ -568,23 +594,23 @@ function renderCompose() {
   const d = { goals: [], photos: { skin: null, hair: null, posture: null } };
   const wrap = mount(`
     ${photoStep(d, "Add one photo or all three. It's gone from our servers by tonight.")}
-    <div class="actions"><button class="btn block" id="composeBtn">Compose my ritual</button></div>
+    <div class="actions"><button class="btn block" id="composeBtn">${t('Compose my ritual')}</button></div>
   `, { tab: '#/home' });
   wirePhotoStep(wrap, d);
   wrap.querySelector('#composeBtn').addEventListener('click', () => {
-    if (!Object.values(d.photos).some(Boolean)) return toast('Tick the consent box and choose a photo first.');
+    if (!Object.values(d.photos).some(Boolean)) return toast(t('Tick the consent box and choose a photo first.'));
     compose(d, false);
   });
 }
 
 async function compose(d, onboarding = true) {
-  const lines = ['Reading your goals…', 'Balancing your morning and evening…', 'Choosing what matters first…', 'Setting out your ritual…'];
+  const lines = ['Reading your goals…', 'Balancing your morning and evening…', 'Choosing what matters first…', 'Setting out your ritual…'].map((l) => t(l));
   const wrap = mount(`
     ${arch('lg', true)}
-    <div class="eyebrow">Composing your ritual</div>
+    <div class="eyebrow">${t('Composing your ritual')}</div>
     <p class="line" id="line">${lines[0]}</p>
     <div class="progress-dots">${lines.map((_, i) => `<i class="${i === 0 ? 'on' : ''}"></i>`).join('')}</div>
-    <p class="fine">${esc(d.goals.join(' · '))}</p>
+    <p class="fine">${esc(d.goals.map((g) => t(g)).join(' · '))}</p>
   `, { noir: true, fill: true });
   wrap.classList.add('composing');
   let i = 0;
@@ -660,46 +686,46 @@ async function renderHome() {
   const done = state.progress.length;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const greeting = t(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
   const seg = (state.segment ||= hour < 15 ? 'morning' : 'evening');
   const moments = [['morning', 'Morning', 'sun'], ['evening', 'Evening', 'moon'], ['weekly_reset', 'Weekly', 'leaf']];
 
   const wrap = mount(`
     <header class="greet">
       <div class="eyebrow">${greeting}</div>
-      <h1>${esc(new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }))}</h1>
+      <h1>${esc(new Date().toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' }))}</h1>
     </header>
     <section class="glass maia-note">
       <div class="top">
         <div class="arch xs"><img src="${MAIA_FULL}" alt="Maia"></div>
         <div>
-          <div class="eyebrow">A note from Maia</div>
+          <div class="eyebrow">${t('A note from Maia')}</div>
           <p class="quote">${esc(r.summary)}</p>
         </div>
       </div>
       <div class="foot">
         ${ring(pct)}
-        <div style="flex:1"><strong>${done} of ${total}</strong><span class="muted">steps today</span></div>
-        ${{ fallback: '<span class="pill" title="Full personalization arrives once Maia\'s AI is connected">Preview ritual</span>', starter: '<span class="pill">Starter ritual</span>' }[state.source] || '<span class="signature">Maia</span>'}
+        <div style="flex:1"><strong>${t('{done} of {total}', { done, total })}</strong><span class="muted">${t('steps today')}</span></div>
+        ${{ fallback: `<span class="pill" title="${t("Full personalization arrives once Maia's AI is connected")}">${t('Preview ritual')}</span>`, starter: `<span class="pill">${t('Starter ritual')}</span>` }[state.source] || '<span class="signature">Maia</span>'}
       </div>
     </section>
-    ${state.source === 'starter' ? premiumInvite(`<button class="btn block" id="inviteBtn">${state.user.is_premium ? 'Compose with my photos' : 'Discover Premium'}</button>`) : ''}
-    <div class="seg" role="group" aria-label="Ritual moment">
-      ${moments.map(([k, label, ic]) => `<button type="button" data-seg="${k}" aria-pressed="${seg === k}">${icon(ic, 16)}${label}</button>`).join('')}
+    ${state.source === 'starter' ? premiumInvite(`<button class="btn block" id="inviteBtn">${t(state.user.is_premium ? 'Compose with my photos' : 'Discover Premium')}</button>`) : ''}
+    <div class="seg" role="group" aria-label="${t('Ritual moment')}">
+      ${moments.map(([k, label, ic]) => `<button type="button" data-seg="${k}" aria-pressed="${seg === k}">${icon(ic, 16)}${t(label)}</button>`).join('')}
     </div>
     <section class="glass steps-list">
-      ${stepRows(seg) || '<p class="empty-steps">Nothing in this moment today. Enjoy the space.</p>'}
+      ${stepRows(seg) || `<p class="empty-steps">${t('Nothing in this moment today. Enjoy the space.')}</p>`}
     </section>
-    <div class="section-title"><h2>Nourish and <em>move</em></h2></div>
+    <div class="section-title"><h2>${t('Nourish and <em>move</em>')}</h2></div>
     <div class="tiles">
-      <section class="tile tile-peach"><div class="tile-head">${icon('leaf', 14)} Nourish</div>${stepRows('meal_support')}</section>
-      <section class="tile tile-sage"><div class="tile-head">${icon('sun', 14)} Move</div>${stepRows('movement_support')}</section>
+      <section class="tile tile-peach"><div class="tile-head">${icon('leaf', 14)} ${t('Nourish')}</div>${stepRows('meal_support')}</section>
+      <section class="tile tile-sage"><div class="tile-head">${icon('sun', 14)} ${t('Move')}</div>${stepRows('movement_support')}</section>
     </div>
-    <div class="section-title"><h2>Refine your <em>ritual</em></h2>${state.user.is_premium ? '' : `<span class="pill">${icon('lock', 12)} Premium</span>`}</div>
+    <div class="section-title"><h2>${t('Refine your <em>ritual</em>')}</h2>${state.user.is_premium ? '' : `<span class="pill">${icon('lock', 12)} Premium</span>`}</div>
     <div class="refine">
-      <button class="btn ghost small" data-action="simplify">${icon('simplify', 16)} Simplify</button>
-      <button class="btn ghost small" data-action="swap">${icon('swap', 16)} Swap ideas</button>
-      <button class="btn ghost small" data-action="lower_cost">${icon('tag', 16)} Lower cost</button>
+      <button class="btn ghost small" data-action="simplify">${icon('simplify', 16)} ${t('Simplify')}</button>
+      <button class="btn ghost small" data-action="swap">${icon('swap', 16)} ${t('Swap ideas')}</button>
+      <button class="btn ghost small" data-action="lower_cost">${icon('tag', 16)} ${t('Lower cost')}</button>
     </div>
   `, { tab: '#/home' });
 
@@ -712,9 +738,9 @@ async function renderHome() {
     try {
       const data = await api('POST', '/api/ritual/checkin', { ritualId: state.ritualId, stepKey: row.dataset.key, day: today() });
       state.progress = data.progress;
-      if (state.progress.length === total) toast('Every step done today. Beautifully kept.');
+      if (state.progress.length === total) toast(t('Every step done today. Beautifully kept.'));
     } catch (e) {
-      toast(`Couldn't save that step: ${e.message}`);
+      toast(t("Couldn't save that step: {error}", { error: e.message }));
     }
     renderHome();
   }));
@@ -724,7 +750,7 @@ async function renderHome() {
     try {
       const data = await api('POST', '/api/ritual/revise', { action: btn.dataset.action });
       state.ritual = data.ritual; state.ritualId = data.id; state.progress = data.progress; state.source = data.source;
-      toast('Maia has refined your ritual.');
+      toast(t('Maia has refined your ritual.'));
       renderHome();
     } catch (e) {
       toast(e.message);
@@ -735,7 +761,8 @@ async function renderHome() {
 
 /* ---------- Shop ---------- */
 
-const priceOf = (s) => Number(String(s).replace(/[^0-9.]/g, '')) || 0;
+// Reads "$18", "₺1.250", "1,299.99 AED": drops thousands separators, accepts a decimal comma.
+const priceOf = (s) => Number(String(s).replace(/[.,](?=\d{3}(\D|$))/g, '').replace(',', '.').replace(/[^0-9.]/g, '')) || 0;
 
 async function renderShopping() {
   await loadRitualIfNeeded();
@@ -743,18 +770,21 @@ async function renderShopping() {
   const now = items.filter((i) => i.tier === 'now');
   const later = items.filter((i) => i.tier !== 'now');
   const total = now.reduce((n, i) => n + priceOf(i.est_price), 0);
+  const money = (n) => (now[0]?.est_price || '$0').replace(/[\d.,]+/, n.toLocaleString(LOCALE)); // total in the picks' own currency
   const product = (it) => `<div class="product"><div><h3>${esc(it.item)}</h3><p>${esc(it.reason)}</p></div><span class="price">${esc(it.est_price)}</span></div>`;
   mount(items.length ? `
-    <header class="row">${portrait()}<div><div class="eyebrow">Maia's picks</div><h1>What matters <em>first</em></h1></div></header>
-    <p class="lede">${now.length} essential${now.length === 1 ? '' : 's'}${total ? ` for $${total}` : ''}. Everything else can wait.</p>
+    <header class="row">${portrait()}<div><div class="eyebrow">${t("Maia's picks")}</div><h1>${t('What matters <em>first</em>')}</h1></div></header>
+    <p class="lede">${t(total
+      ? (now.length === 1 ? '{n} essential for {total}. Everything else can wait.' : '{n} essentials for {total}. Everything else can wait.')
+      : (now.length === 1 ? '{n} essential. Everything else can wait.' : '{n} essentials. Everything else can wait.'), { n: now.length, total: esc(money(total)) })}</p>
     <section class="glass">
-      <div class="eyebrow" style="margin-bottom:4px">Start with</div>
+      <div class="eyebrow" style="margin-bottom:4px">${t('Start with')}</div>
       ${now.map(product).join('')}
-      ${total ? `<div class="total"><span>Essentials</span><span class="price">$${total}</span></div>` : ''}
+      ${total ? `<div class="total"><span>${t('Essentials')}</span><span class="price">${esc(money(total))}</span></div>` : ''}
     </section>
-    ${later.length ? `<section class="glass soft"><div class="eyebrow" style="margin-bottom:4px">When you're ready</div>${later.map(product).join('')}</section>` : ''}
+    ${later.length ? `<section class="glass soft"><div class="eyebrow" style="margin-bottom:4px">${t("When you're ready")}</div>${later.map(product).join('')}</section>` : ''}
   ` : `
-    <section class="hero">${arch('sm')}<h1>Your ritual <em>comes first</em></h1><p class="lede">Once your ritual is composed, Maia picks the few things worth buying.</p></section>
+    <section class="hero">${arch('sm')}<h1>${t('Your ritual <em>comes first</em>')}</h1><p class="lede">${t('Once your ritual is composed, Maia picks the few things worth buying.')}</p></section>
   `, { tab: '#/shopping' });
 }
 
@@ -789,55 +819,55 @@ async function renderProgress() {
     const prev = base?.metrics?.[name];
     const delta = typeof prev === 'number' ? Math.round((score - prev) * 10) / 10 : null;
     const chip = delta === null ? '' : `<span class="delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : delta < 0 ? '−' : '±'}${Math.abs(delta).toFixed(1)}</span>`;
-    return `<div class="metric-row"><span class="name">${esc(cap(name))}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, score * 10))}%"></i></span><span class="val"><strong>${Number(score).toFixed(1)}</strong>${chip}</span></div>`;
+    return `<div class="metric-row"><span class="name">${esc(t(cap(name)))}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, score * 10))}%"></i></span><span class="val"><strong>${Number(score).toFixed(1)}</strong>${chip}</span></div>`;
   }).join('') : '';
 
   const wrap = mount(`
-    <header><div class="eyebrow">Progress</div><h1>Your ${esc(kind)}, <em>over time</em></h1></header>
-    <div class="seg" role="group" aria-label="Area">
-      ${KINDS.map((k) => `<button type="button" data-kind="${k}" aria-pressed="${k === kind}">${icon(KIND_ICON[k], 16)}${cap(k)}</button>`).join('')}
+    <header><div class="eyebrow">${t('Progress')}</div><h1>${t(`Your ${kind}, <em>over time</em>`)}</h1></header>
+    <div class="seg" role="group" aria-label="${t('Area')}">
+      ${KINDS.map((k) => `<button type="button" data-kind="${k}" aria-pressed="${k === kind}">${icon(KIND_ICON[k], 16)}${kindName(k)}</button>`).join('')}
     </div>
     ${latest ? `
       <section class="glass stack">
         <div class="spread"><h2>${esc(fmtDay(latest.created))}</h2>
-          <div class="seg mini" role="group" aria-label="Compare with">
-            <button type="button" data-mode="day" aria-pressed="${mode === 'day'}">Yesterday</button>
-            <button type="button" data-mode="week" aria-pressed="${mode === 'week'}">Last week</button>
+          <div class="seg mini" role="group" aria-label="${t('Compare with')}">
+            <button type="button" data-mode="day" aria-pressed="${mode === 'day'}">${t('Yesterday')}</button>
+            <button type="button" data-mode="week" aria-pressed="${mode === 'week'}">${t('Last week')}</button>
           </div>
         </div>
         ${maiaSays(latest.summary)}
         <div>${metrics}</div>
-        <p class="fine">${base ? `Compared with ${esc(fmtDay(base.created))}.` : `Nothing to compare ${mode === 'week' ? 'from a week ago' : 'from an earlier day'} yet.`}</p>
+        <p class="fine">${base ? t('Compared with {date}.', { date: esc(fmtDay(base.created)) }) : t(mode === 'week' ? 'Nothing to compare from a week ago yet.' : 'Nothing to compare from an earlier day yet.')}</p>
       </section>` : `
       <section class="glass hero">
         ${arch('sm')}
-        <h2>Your first <em>${esc(kind)}</em> examination</h2>
-        <p class="lede">${state.user.is_premium ? 'Add a photo below. ' : ''}Maia scores what she sees, then tracks it with you day by day.</p>
+        <h2>${t(`Your first <em>${kind}</em> examination`)}</h2>
+        <p class="lede">${t(state.user.is_premium ? 'Add a photo below. Maia scores what she sees, then tracks it with you day by day.' : 'Maia scores what she sees, then tracks it with you day by day.')}</p>
       </section>`}
     ${photoNow ? `
       <section class="glass stack">
-        <div class="spread"><strong>On this phone only</strong><span class="pill">${icon('lock', 12)} Private</span></div>
+        <div class="spread"><strong>${t('On this phone only')}</strong><span class="pill">${icon('lock', 12)} ${t('Private')}</span></div>
         <div class="compare-grid">
-          ${photoBase ? `<figure><img src="${esc(photoBase.dataUrl)}" alt="Earlier ${esc(kind)} photo"><figcaption>${esc(fmtDay(photoBase.created))}</figcaption></figure>` : ''}
-          <figure><img src="${esc(photoNow.dataUrl)}" alt="Latest ${esc(kind)} photo"><figcaption>${esc(fmtDay(photoNow.created))}</figcaption></figure>
+          ${photoBase ? `<figure><img src="${esc(photoBase.dataUrl)}" alt="${t('Earlier {kind} photo', { kind: kindName(kind).toLocaleLowerCase(LOCALE) })}"><figcaption>${esc(fmtDay(photoBase.created))}</figcaption></figure>` : ''}
+          <figure><img src="${esc(photoNow.dataUrl)}" alt="${t('Latest {kind} photo', { kind: kindName(kind).toLocaleLowerCase(LOCALE) })}"><figcaption>${esc(fmtDay(photoNow.created))}</figcaption></figure>
         </div>
-        <button class="btn quiet" id="clearDevice">${icon('trash', 16)} Delete photos on this phone</button>
+        <button class="btn quiet" id="clearDevice">${icon('trash', 16)} ${t('Delete photos on this phone')}</button>
       </section>` : ''}
     ${state.user.is_premium ? `
     <section class="glass stack">
-      <h2>Today's <em>check-in</em></h2>
+      <h2>${t("Today's <em>check-in</em>")}</h2>
       <div id="captureSlot"></div>
       <div id="keepSlot"></div>
       <p class="error" id="err" role="alert" hidden></p>
-      <button class="btn block" id="analyzeBtn">Analyze</button>
-    </section>` : premiumInvite('<button class="btn block" id="inviteBtn">Discover Premium</button>')}
+      <button class="btn block" id="analyzeBtn">${t('Analyze')}</button>
+    </section>` : premiumInvite(`<button class="btn block" id="inviteBtn">${t('Discover Premium')}</button>`)}
     ${policyDetails()}
     ${exams.length > 1 ? `
       <section class="glass">
-        <div class="eyebrow" style="margin-bottom:4px">History</div>
+        <div class="eyebrow" style="margin-bottom:4px">${t('History')}</div>
         <div class="timeline">${exams.slice(0, 12).map((x) => {
           const dt = new Date(x.created);
-          return `<div class="timeline-item"><div class="when">${dt.getDate()}<small>${esc(dt.toLocaleDateString(undefined, { month: 'short' }))}</small></div><p class="muted" style="font-size:14px">${esc(x.summary)}</p></div>`;
+          return `<div class="timeline-item"><div class="when">${dt.getDate()}<small>${esc(dt.toLocaleDateString(LOCALE, { month: 'short' }))}</small></div><p class="muted" style="font-size:14px">${esc(x.summary)}</p></div>`;
         }).join('')}</div>
       </section>` : ''}
   `, { tab: '#/progress' });
@@ -848,27 +878,27 @@ async function renderProgress() {
   wrap.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => { state.progressKind = b.dataset.kind; render(); }));
   wrap.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { state.compareMode = b.dataset.mode; render(); }));
   wrap.querySelector('#clearDevice')?.addEventListener('click', async () => {
-    if (!confirm('Delete all Maia photos saved on this phone?')) return;
+    if (!confirm(t('Delete all Maia photos saved on this phone?'))) return;
     await deviceDB.clearMine();
-    toast('Photos deleted from this phone.');
+    toast(t('Photos deleted from this phone.'));
     render();
   });
   const err = wrap.querySelector('#err');
   wrap.querySelector('#analyzeBtn')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     err.hidden = true;
-    if (!newPhoto[kind]) { err.textContent = 'Tick the consent box and choose a photo first.'; err.hidden = false; return; }
+    if (!newPhoto[kind]) { err.textContent = t('Tick the consent box and choose a photo first.'); err.hidden = false; return; }
     btn.disabled = true;
-    btn.textContent = 'Maia is looking…';
+    btn.textContent = t('Maia is looking…');
     try {
       await submitPhotos(newPhoto);
-      toast('Examination saved. Your photo leaves our servers tonight.');
+      toast(t('Examination saved. Your photo leaves our servers tonight.'));
       render();
     } catch (e2) {
       err.textContent = e2.message;
       err.hidden = false;
       btn.disabled = false;
-      btn.textContent = 'Analyze';
+      btn.textContent = t('Analyze');
     }
   });
 }
@@ -883,10 +913,10 @@ async function renderChat() {
       <section class="hero">
         ${arch('', true)}
         <div class="eyebrow">Maia · Premium</div>
-        <h1>Talk with <em>Maia</em></h1>
-        <p class="lede">Ask about your ritual, swaps and progress. Calm answers, grounded in your own plan.</p>
+        <h1>${t('Talk with <em>Maia</em>')}</h1>
+        <p class="lede">${t('Ask about your ritual, swaps and progress. Calm answers, grounded in your own plan.')}</p>
       </section>
-      <button class="btn block" id="upgradeBtn">${icon('gem', 18)} Unlock with Premium</button>
+      <button class="btn block" id="upgradeBtn">${icon('gem', 18)} ${t('Unlock with Premium')}</button>
     `, { tab: '#/chat' });
     wrap.querySelector('#upgradeBtn').addEventListener('click', () => nav('#/premium'));
     return;
@@ -894,21 +924,21 @@ async function renderChat() {
 
   const history = await api('GET', '/api/chat/history');
   const hour = new Date().getHours();
-  const hello = `${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}. I'm here whenever you want to adjust your ritual or ask about a product.`;
+  const hello = t("{greeting}. I'm here whenever you want to adjust your ritual or ask about a product.", { greeting: t(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening') });
   const wrap = mount(`
     <header class="chat-head">
       <div class="arch xs"><img src="${MAIA_FULL}" alt="Maia"></div>
-      <div><h2>Maia</h2><div class="status">Here for your ritual</div></div>
+      <div><h2>Maia</h2><div class="status">${t('Here for your ritual')}</div></div>
     </header>
     <div class="chat-log" id="log" aria-live="polite">
       ${history.messages.length
         ? history.messages.map((m) => `<div class="msg ${m.role === 'user' ? 'user' : 'assistant'}">${esc(m.content)}</div>`).join('')
         : `<div class="msg assistant">${esc(hello)}</div>`}
-      <div class="chips" id="chips" ${history.messages.length ? 'hidden' : ''}>${SUGGESTIONS.map((s) => `<button type="button" class="chip">${esc(s)}</button>`).join('')}</div>
+      <div class="chips" id="chips" ${history.messages.length ? 'hidden' : ''}>${SUGGESTIONS.map((s) => `<button type="button" class="chip">${esc(t(s))}</button>`).join('')}</div>
     </div>
     <form class="composer" id="composer">
-      <input id="msgInput" placeholder="Ask Maia…" autocomplete="off" aria-label="Message Maia">
-      <button class="send" type="submit" aria-label="Send">${icon('up', 18)}</button>
+      <input id="msgInput" placeholder="${t('Ask Maia…')}" autocomplete="off" aria-label="${t('Message Maia')}">
+      <button class="send" type="submit" aria-label="${t('Send')}">${icon('up', 18)}</button>
     </form>
   `, { tab: '#/chat' });
   const log = wrap.querySelector('#log');
@@ -919,7 +949,7 @@ async function renderChat() {
     wrap.querySelector('#chips').hidden = true;
     input.value = '';
     log.appendChild(el(`<div class="msg user">${esc(text)}</div>`));
-    const typing = el('<div class="msg assistant"><span class="typing" aria-label="Maia is writing"><i></i><i></i><i></i></span></div>');
+    const typing = el(`<div class="msg assistant"><span class="typing" aria-label="${t('Maia is writing')}"><i></i><i></i><i></i></span></div>`);
     log.appendChild(typing);
     scrollDown();
     try {
@@ -939,45 +969,47 @@ async function renderChat() {
 
 function renderAccount() {
   const u = state.user;
-  const plan = u.is_premium ? `Premium · ${cap(u.plan || 'monthly')}` : 'Free preview';
+  const plan = u.is_premium ? `Premium · ${t(cap(u.plan || 'monthly'))}` : t('Free preview');
   const reminders = loadReminders();
-  const reminderText = [reminders.am.on && `Morning ${reminders.am.time}`, reminders.pm.on && `Evening ${reminders.pm.time}`].filter(Boolean).join(' · ') || 'Off';
+  const reminderText = [reminders.am.on && t('Morning {time}', { time: reminders.am.time }), reminders.pm.on && t('Evening {time}', { time: reminders.pm.time })].filter(Boolean).join(' · ') || t('Off');
   const wrap = mount(`
     <header class="row"><span class="monogram">${esc((u.email[0] || 'M').toUpperCase())}</span><div class="stack" style="gap:6px;min-width:0"><strong class="email">${esc(u.email)}</strong><span><span class="pill ${u.is_premium ? 'sage' : ''}">${esc(plan)}</span></span></div></header>
     <section class="glass list">
-      <button class="list-row" id="premiumRow"><span class="ic">${icon('gem')}</span><span class="grow">Maia Premium<small>${u.is_premium && u.premium_until ? `Renews or ends ${esc(fmtDay(u.premium_until))}` : 'Revisions, chat with Maia and more'}</small></span><span class="chev">${icon('chev', 18)}</span></button>
-      <button class="list-row" id="remindersRow"><span class="ic">${icon('bell')}</span><span class="grow">Ritual reminders<small>${esc(reminderText)}</small></span><span class="chev">${icon('chev', 18)}</span></button>
+      <button class="list-row" id="premiumRow"><span class="ic">${icon('gem')}</span><span class="grow">Maia Premium<small>${u.is_premium && u.premium_until ? t('Renews or ends {date}', { date: esc(fmtDay(u.premium_until)) }) : t('Revisions, chat with Maia and more')}</small></span><span class="chev">${icon('chev', 18)}</span></button>
+      <button class="list-row" id="remindersRow"><span class="ic">${icon('bell')}</span><span class="grow">${t('Ritual reminders')}<small>${esc(reminderText)}</small></span><span class="chev">${icon('chev', 18)}</span></button>
+      <button class="list-row" id="langRow"><span class="ic">${icon('globe')}</span><span class="grow">${t('Language')}<small>${LANG === 'tr' ? 'Türkçe' : 'English'}</small></span><span class="chev">${icon('chev', 18)}</span></button>
     </section>
-    <div class="eyebrow list-label">Privacy</div>
+    <div class="eyebrow list-label">${t('Privacy')}</div>
     <section class="glass list">
-      <div class="list-row static"><span class="ic">${icon('shield')}</span><span class="grow">Photos delete themselves daily<small>Nothing kept past the end of your day</small></span></div>
-      <button class="list-row" id="deleteBtn"><span class="ic">${icon('trash')}</span><span class="grow">Delete photos, examinations and chat</span></button>
-      <button class="list-row danger" id="deleteAccountBtn"><span class="ic">${icon('trash')}</span><span class="grow">Delete my account</span></button>
+      <div class="list-row static"><span class="ic">${icon('shield')}</span><span class="grow">${t('Photos delete themselves daily')}<small>${t('Nothing kept past the end of your day')}</small></span></div>
+      <button class="list-row" id="deleteBtn"><span class="ic">${icon('trash')}</span><span class="grow">${t('Delete photos, examinations and chat')}</span></button>
+      <button class="list-row danger" id="deleteAccountBtn"><span class="ic">${icon('trash')}</span><span class="grow">${t('Delete my account')}</span></button>
     </section>
     <section class="glass list">
-      <a class="list-row" href="/terms.html"><span class="ic">${icon('doc')}</span><span class="grow">Terms of Use</span><span class="chev">${icon('chev', 18)}</span></a>
-      <a class="list-row" href="/privacy.html"><span class="ic">${icon('doc')}</span><span class="grow">Privacy Policy</span><span class="chev">${icon('chev', 18)}</span></a>
-      <button class="list-row" id="logoutBtn"><span class="ic">${icon('out')}</span><span class="grow">Log out</span></button>
+      <a class="list-row" href="/terms.html"><span class="ic">${icon('doc')}</span><span class="grow">${t('Terms of Use')}</span><span class="chev">${icon('chev', 18)}</span></a>
+      <a class="list-row" href="/privacy.html"><span class="ic">${icon('doc')}</span><span class="grow">${t('Privacy Policy')}</span><span class="chev">${icon('chev', 18)}</span></a>
+      <button class="list-row" id="logoutBtn"><span class="ic">${icon('out')}</span><span class="grow">${t('Log out')}</span></button>
     </section>
   `, { tab: '#/account' });
   wrap.querySelector('#premiumRow').addEventListener('click', () => nav('#/premium'));
   wrap.querySelector('#remindersRow').addEventListener('click', () => nav('#/reminders'));
+  wrap.querySelector('#langRow').addEventListener('click', () => setLang(LANG === 'tr' ? 'en' : 'tr'));
   wrap.querySelector('#logoutBtn').addEventListener('click', logout);
   wrap.querySelector('#deleteBtn').addEventListener('click', async () => {
-    if (!confirm('Delete your photos, examinations and chat history? This cannot be undone.')) return;
+    if (!confirm(t('Delete your photos, examinations and chat history? This cannot be undone.'))) return;
     try {
       await api('POST', '/api/privacy/delete');
-      toast('Photos, examinations and chat deleted.');
+      toast(t('Photos, examinations and chat deleted.'));
     } catch (e) {
-      toast(`Nothing was deleted: ${e.message}`);
+      toast(t('Nothing was deleted: {error}', { error: e.message }));
     }
   });
   wrap.querySelector('#deleteAccountBtn').addEventListener('click', async () => {
     const storeSub = u.is_premium && ['app_store', 'play_store'].includes(u.billing_source);
     const warning = storeSub
-      ? `\n\nYour subscription is billed by ${u.billing_source === 'app_store' ? 'Apple' : 'Google Play'}. Deleting your account does not cancel it: cancel it in your store subscription settings too.`
+      ? `\n\n${t('Your subscription is billed by {store}. Deleting your account does not cancel it: cancel it in your store subscription settings too.', { store: u.billing_source === 'app_store' ? 'Apple' : 'Google Play' })}`
       : '';
-    if (!confirm(`Permanently delete your account, photos, rituals and history?${warning}`)) return;
+    if (!confirm(`${t('Permanently delete your account, photos, rituals and history?')}${warning}`)) return;
     try {
       await api('POST', '/api/account/delete');
     } catch (e) {
@@ -1003,12 +1035,12 @@ const cancelReminders = () => (NATIVE ? notify('cancel', { notifications: [{ id:
 async function scheduleReminders(r) {
   await cancelReminders();
   const wanted = [
-    r.am.on && { id: 1, title: 'Your morning ritual', body: 'A few calm minutes to begin the day.', time: r.am.time },
-    r.pm.on && { id: 2, title: 'Your evening ritual', body: 'Time to unwind. Your ritual is ready.', time: r.pm.time },
+    r.am.on && { id: 1, title: t('Your morning ritual'), body: t('A few calm minutes to begin the day.'), time: r.am.time },
+    r.pm.on && { id: 2, title: t('Your evening ritual'), body: t('Time to unwind. Your ritual is ready.'), time: r.pm.time },
   ].filter(Boolean);
   if (!wanted.length) return;
   const perm = await notify('requestPermissions');
-  if (perm.display !== 'granted') throw new Error('Notifications are turned off for Maia in your phone settings.');
+  if (perm.display !== 'granted') throw new Error(t('Notifications are turned off for Maia in your phone settings.'));
   await notify('schedule', {
     notifications: wanted.map(({ id, title, body, time }) => {
       const [hour, minute] = time.split(':').map(Number);
@@ -1020,19 +1052,19 @@ async function scheduleReminders(r) {
 function renderReminders() {
   const r = loadReminders();
   const row = (key, label, sub) => `
-    <label class="switch-row"><span><strong>${label}</strong><small>${sub}</small></span><input type="checkbox" id="${key}On" ${r[key].on ? 'checked' : ''} ${NATIVE ? '' : 'disabled'}><span class="switch"></span></label>
-    <label class="field"><span>Time</span><input class="input" type="time" id="${key}Time" value="${esc(r[key].time)}" ${NATIVE ? '' : 'disabled'}></label>`;
+    <label class="switch-row"><span><strong>${t(label)}</strong><small>${t(sub)}</small></span><input type="checkbox" id="${key}On" ${r[key].on ? 'checked' : ''} ${NATIVE ? '' : 'disabled'}><span class="switch"></span></label>
+    <label class="field"><span>${t('Time')}</span><input class="input" type="time" id="${key}Time" value="${esc(r[key].time)}" ${NATIVE ? '' : 'disabled'}></label>`;
   const wrap = mount(`
-    <div class="wizard-top"><button class="icon-btn" id="backBtn" aria-label="Back">${icon('back')}</button></div>
-    <header><div class="eyebrow">Reminders</div><h1>A gentle <em>nudge</em></h1></header>
-    ${maiaSays("I'll remind you once in the morning and once in the evening. Nothing more.")}
-    ${NATIVE ? '' : '<p class="note">Reminders work in the Maia app for iPhone and Android.</p>'}
+    <div class="wizard-top"><button class="icon-btn" id="backBtn" aria-label="${t('Back')}">${icon('back')}</button></div>
+    <header><div class="eyebrow">${t('Reminders')}</div><h1>${t('A gentle <em>nudge</em>')}</h1></header>
+    ${maiaSays(t("I'll remind you once in the morning and once in the evening. Nothing more."))}
+    ${NATIVE ? '' : `<p class="note">${t('Reminders work in the Maia app for iPhone and Android.')}</p>`}
     <section class="glass stack">
       ${row('am', 'Morning ritual', 'Every day')}
       <div class="rule"></div>
       ${row('pm', 'Evening ritual', 'Every day')}
     </section>
-    <button class="btn block" id="saveBtn" ${NATIVE ? '' : 'disabled'}>Save reminders</button>
+    <button class="btn block" id="saveBtn" ${NATIVE ? '' : 'disabled'}>${t('Save reminders')}</button>
   `, { tab: '#/account' });
   wrap.querySelector('#backBtn').addEventListener('click', () => nav('#/account'));
   wrap.querySelector('#saveBtn').addEventListener('click', async () => {
@@ -1043,7 +1075,7 @@ function renderReminders() {
     try {
       await scheduleReminders(next);
       prefSet('maia.reminders', JSON.stringify(next));
-      toast(next.am.on || next.pm.on ? 'Reminders set.' : 'Reminders turned off.');
+      toast(t(next.am.on || next.pm.on ? 'Reminders set.' : 'Reminders turned off.'));
       nav('#/account');
     } catch (e) {
       toast(e.message);
@@ -1092,7 +1124,7 @@ async function renderPremium(status) {
   const billing = await api('GET', '/api/billing/plans');
   if (status === 'success') {
     // Stripe redirects back before its webhook lands; wait briefly instead of showing "not premium" to a paying user.
-    mount(`${arch('', true)}<div class="eyebrow">Maia Premium</div><h1>Activating your <em>ritual</em></h1><p class="lede">This usually takes a few seconds.</p>`, { noir: true, fill: true });
+    mount(`${arch('', true)}<div class="eyebrow">Maia Premium</div><h1>${t('Activating your <em>ritual</em>')}</h1><p class="lede">${t('This usually takes a few seconds.')}</p>`, { noir: true, fill: true });
     state.user = await api('GET', '/api/me');
     for (let i = 0; i < 5 && !state.user.is_premium; i++) {
       await sleep(2000);
@@ -1107,7 +1139,9 @@ async function renderPremium(status) {
     const p = billing.plans.find((x) => x.id === id);
     return { ...p, price: pkgs[id]?.product?.priceString || p.price };
   };
-  const perMonth = (p) => (p.period === 'year' && priceOf(p.price) ? `$${(priceOf(p.price) / 12).toFixed(2)} a month, billed yearly` : 'Cancel anytime');
+  const perMonth = (p) => (p.period === 'year' && priceOf(p.price)
+    ? t('{price} a month, billed yearly', { price: p.price.replace(/[\d.,]+/, (priceOf(p.price) / 12).toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })) })
+    : t('Cancel anytime'));
   const manageHint = {
     stripe: NATIVE ? 'Manage or cancel on the Maia website.' : 'Manage or cancel anytime below.',
     app_store: 'Manage or cancel in your Apple ID subscription settings.',
@@ -1115,46 +1149,46 @@ async function renderPremium(status) {
     dev: 'Test upgrade: no payment was taken.',
   }[u.billing_source] || '';
   const benefits = [
-    ['camera', 'Daily photo check-ins', 'Skin, hair and posture, compared day by day and week by week'],
-    ['sparkle', 'A ritual written for you', 'Composed by Maia from your photos, not a template'],
-    ['repeat', 'Revise in one tap', 'Simplify, swap or lower the cost'],
-    ['chat', 'Talk with Maia', `Up to ${billing.limits.premium.chat[0]} questions a day, answered calmly`],
+    ['camera', t('Daily photo check-ins'), t('Skin, hair and posture, compared day by day and week by week')],
+    ['sparkle', t('A ritual written for you'), t('Composed by Maia from your photos, not a template')],
+    ['repeat', t('Revise in one tap'), t('Simplify, swap or lower the cost')],
+    ['chat', t('Talk with Maia'), t('Up to {n} questions a day, answered calmly', { n: billing.limits.premium.chat[0] })],
   ];
 
   const wrap = mount(`
-    <div class="spread"><button class="icon-btn" id="closeBtn" aria-label="Close">${icon('close')}</button><span></span></div>
+    <div class="spread"><button class="icon-btn" id="closeBtn" aria-label="${t('Close')}">${icon('close')}</button><span></span></div>
     <section class="hero" style="padding-top:0">
       ${arch('', true)}
       <div class="eyebrow">Maia Premium</div>
-      <h1 class="display">${u.is_premium ? 'Your ritual, <em>in full.</em>' : 'The full ritual, <em>every day.</em>'}</h1>
+      <h1 class="display">${t(u.is_premium ? 'Your ritual, <em>in full.</em>' : 'The full ritual, <em>every day.</em>')}</h1>
     </section>
     <div class="rule"></div>
     ${u.is_premium ? `
       <section class="glass stack">
-        <h2>You're on <em>Premium</em></h2>
-        <p class="lede">${esc(cap(u.plan || 'monthly'))} plan${u.premium_until ? ` · renews or ends ${esc(fmtDay(u.premium_until))}` : ''}</p>
-        <p class="fine">${esc(manageHint)}</p>
-        ${u.billing_source === 'stripe' && !NATIVE ? '<button class="btn ghost block" id="portalBtn">Manage subscription</button>' : ''}
-        ${NATIVE && STORE_MANAGE_URL[PLATFORM] && !['stripe', 'dev'].includes(u.billing_source) ? '<button class="btn ghost block" id="storeManageBtn">Manage subscription</button>' : ''}
+        <h2>${t("You're on <em>Premium</em>")}</h2>
+        <p class="lede">${t('{plan} plan', { plan: esc(t(cap(u.plan || 'monthly'))) })}${u.premium_until ? t(' · renews or ends {date}', { date: esc(fmtDay(u.premium_until)) }) : ''}</p>
+        <p class="fine">${esc(t(manageHint))}</p>
+        ${u.billing_source === 'stripe' && !NATIVE ? `<button class="btn ghost block" id="portalBtn">${t('Manage subscription')}</button>` : ''}
+        ${NATIVE && STORE_MANAGE_URL[PLATFORM] && !['stripe', 'dev'].includes(u.billing_source) ? `<button class="btn ghost block" id="storeManageBtn">${t('Manage subscription')}</button>` : ''}
       </section>` : `
       <section class="glass benefits">
-        ${benefits.map(([ic, t, s]) => `<div class="benefit"><span class="ic">${icon(ic, 18)}</span><div><strong>${esc(t)}</strong><span>${esc(s)}</span></div></div>`).join('')}
+        ${benefits.map(([ic, title, sub]) => `<div class="benefit"><span class="ic">${icon(ic, 18)}</span><div><strong>${esc(title)}</strong><span>${esc(sub)}</span></div></div>`).join('')}
       </section>
       <div class="plans" role="radiogroup" aria-label="Plan">
         ${billing.plans.map((x) => planOf(x.id)).map((p) => `
           <button type="button" class="plan" role="radio" data-plan="${esc(p.id)}" aria-checked="${p.id === selected}">
             <span class="radio"></span>
-            <span class="grow"><strong>${esc(p.label)}</strong><small>${esc(perMonth(p))}</small></span>
+            <span class="grow"><strong>${esc(t(p.label))}</strong><small>${esc(perMonth(p))}</small></span>
             <span class="price">${esc(p.price)}</span>
-            ${p.note ? `<span class="pill gold badge">${esc(p.note)}</span>` : ''}
+            ${p.note ? `<span class="pill gold badge">${esc(t(p.note))}</span>` : ''}
           </button>`).join('')}
       </div>
       <p class="error" id="err" role="alert" hidden></p>
       <button class="btn block" id="buyBtn"></button>
-      ${NATIVE ? '<button class="btn quiet" id="restoreBtn">Restore purchases</button>' : ''}
-      ${billing.devUpgrade ? '<button class="btn ghost small" id="devBtn">Payments not configured: unlock for testing</button>' : ''}
+      ${NATIVE ? `<button class="btn quiet" id="restoreBtn">${t('Restore purchases')}</button>` : ''}
+      ${billing.devUpgrade ? `<button class="btn ghost small" id="devBtn">${t('Payments not configured: unlock for testing')}</button>` : ''}
       <p class="fine" id="disclosure"></p>`}
-    <p class="fine center"><a href="/terms.html">Terms of Use</a> · <a href="/privacy.html">Privacy Policy</a></p>
+    <p class="fine center"><a href="/terms.html">${t('Terms of Use')}</a> · <a href="/privacy.html">${t('Privacy Policy')}</a></p>
   `, { noir: true });
 
   wrap.querySelector('#closeBtn').addEventListener('click', () => (history.length > 1 ? history.back() : nav('#/home')));
@@ -1163,10 +1197,11 @@ async function renderPremium(status) {
   const update = () => {
     if (!buyBtn) return;
     const p = planOf(selected);
-    buyBtn.textContent = `Continue with ${p.label}`;
+    buyBtn.textContent = t('Continue with {plan}', { plan: t(p.label) });
+    const vars = { store: STORE_NAME[PLATFORM], price: p.price, period: t(p.period) };
     disclosure.textContent = NATIVE
-      ? `Payment is charged to your ${STORE_NAME[PLATFORM]} account at confirmation of purchase. The subscription renews automatically at ${p.price} per ${p.period} unless cancelled at least 24 hours before the end of the current period; renewal is charged within 24 hours before the period ends. Manage or cancel anytime in your ${STORE_NAME[PLATFORM]} subscription settings.`
-      : `Payment is charged at confirmation. The subscription renews automatically at ${p.price} per ${p.period} unless cancelled at least 24 hours before the end of the current period. Cancel anytime from You → Maia Premium.`;
+      ? t('Payment is charged to your {store} account at confirmation of purchase. The subscription renews automatically at {price} per {period} unless cancelled at least 24 hours before the end of the current period; renewal is charged within 24 hours before the period ends. Manage or cancel anytime in your {store} subscription settings.', vars)
+      : t('Payment is charged at confirmation. The subscription renews automatically at {price} per {period} unless cancelled at least 24 hours before the end of the current period. Cancel anytime from You → Maia Premium.', vars);
   };
   update();
   wrap.querySelectorAll('[data-plan]').forEach((b) => b.addEventListener('click', () => {
@@ -1184,8 +1219,8 @@ async function renderPremium(status) {
         location.href = (await api('POST', '/api/billing/checkout', { plan: selected })).url;
         return;
       }
-      if (!store) throw new Error('In-app purchases are not set up yet');
-      if (!pkgs[selected]) throw new Error('This plan is not available in the store yet');
+      if (!store) throw new Error(t('In-app purchases are not set up yet'));
+      if (!pkgs[selected]) throw new Error(t('This plan is not available in the store yet'));
       await rcCall('purchasePackage', { aPackage: pkgs[selected] });
       await refreshAfterStore();
       renderPremium();
@@ -1196,10 +1231,10 @@ async function renderPremium(status) {
   });
   wrap.querySelector('#restoreBtn')?.addEventListener('click', async () => {
     try {
-      if (!store) throw new Error('In-app purchases are not set up yet');
+      if (!store) throw new Error(t('In-app purchases are not set up yet'));
       await rcCall('restorePurchases');
       await refreshAfterStore();
-      if (!state.user.is_premium) throw new Error(`No active Maia subscription found for this ${STORE_NAME[PLATFORM]} account.`);
+      if (!state.user.is_premium) throw new Error(t('No active Maia subscription found for this {store} account.', { store: STORE_NAME[PLATFORM] }));
       renderPremium();
     } catch (e) {
       showErr(e.message);
@@ -1209,7 +1244,7 @@ async function renderPremium(status) {
   wrap.querySelector('#devBtn')?.addEventListener('click', async () => {
     await api('POST', '/api/subscribe');
     state.user = await api('GET', '/api/me');
-    toast('Premium unlocked for testing.');
+    toast(t('Premium unlocked for testing.'));
     renderPremium();
   });
   wrap.querySelector('#portalBtn')?.addEventListener('click', async () => {
@@ -1226,12 +1261,12 @@ function renderLoading() {
 function renderError(message) {
   const wrap = mount(`
     ${arch('sm')}
-    <div class="eyebrow">A small pause</div>
-    <h1>Something needs <em>a moment</em></h1>
+    <div class="eyebrow">${t('A small pause')}</div>
+    <h1>${t('Something needs <em>a moment</em>')}</h1>
     <p class="lede" role="alert">${esc(message)}</p>
     <div class="stack" style="width:100%">
-      <button class="btn block" id="retryBtn">Try again</button>
-      <button class="btn ghost block" id="homeBtn">Back to my ritual</button>
+      <button class="btn block" id="retryBtn">${t('Try again')}</button>
+      <button class="btn ghost block" id="homeBtn">${t('Back to my ritual')}</button>
     </div>
   `, { fill: true, tab: state.user ? '#/none' : undefined });
   wrap.querySelector('#retryBtn').addEventListener('click', render);
@@ -1248,7 +1283,7 @@ async function render() {
       forgetSession();
       return renderAuth();
     }
-    renderError(e.message || 'Please check your connection and try again.');
+    renderError(e.message || t('Please check your connection and try again.'));
   } finally {
     clearTimeout(slow);
   }
@@ -1262,6 +1297,10 @@ async function route() {
     try { state.user = await api('GET', '/api/me'); } catch { /* not logged in */ }
   }
   if (!state.user) return hash === '#/forgot' ? renderForgot() : renderAuth();
+  if (state.user.lang !== LANG) { // keep the server in step, so Maia writes rituals and replies in the app's language
+    state.user.lang = LANG;
+    api('POST', '/api/settings', { lang: LANG }).catch(() => {});
+  }
   if (!state.user.email_verified) return renderVerifyEmail(hash === '#/verify-failed');
   if (!state.user.onboarding_complete && hash !== '#/onboarding') return nav('#/onboarding');
 
