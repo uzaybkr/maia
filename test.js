@@ -49,7 +49,7 @@ assert.throws(() => normalizeExamination('skin', { metrics: {} }), 'examination 
     assert.equal((await generateRitual({ goals: ['Glow'] }, { action: 'simplify', current: {} })).source, 'ai');
     assert.equal((await generateChatReply({}, null, [], 'hi')).source, 'ai');
     assert.deepEqual(sent.map((b) => b.model), ['claude-sonnet-5', 'claude-opus-5-5', 'claude-sonnet-5', 'claude-sonnet-5'], 'models per task');
-    assert.ok(sent.every((b) => b.max_tokens >= 16000), 'room for thinking plus the answer');
+    assert.deepEqual(sent.map((b) => b.max_tokens), [3000, 16000, 8000, 3000], 'only a new ritual may write long; caps what one call can cost');
     stop = 'max_tokens';
     assert.equal((await examinePhoto('skin', img)).examination, null, 'truncated reply is not stored as a score');
   } finally {
@@ -335,6 +335,9 @@ try {
   await rcWebhook(rcEvent('EXPIRATION'));
   assert.equal((await call('GET', '/api/me')).data.is_premium, false, 'expiration ends access');
   assert.equal((await rcWebhook(rcEvent('INITIAL_PURCHASE', { app_user_id: 'someone-else' }))).status, 200, 'unknown users ignored');
+  await rcWebhook(rcEvent('INITIAL_PURCHASE'));
+  await rcWebhook({ type: 'TRANSFER', transferred_from: [userId], transferred_to: ['second-login'], store: 'PLAY_STORE' });
+  assert.equal((await call('GET', '/api/me')).data.is_premium, false, 'a subscription restored onto another account leaves this one');
   assert.equal((await call('POST', '/api/billing/revenuecat-sync')).status, 503, 'sync needs the RevenueCat secret key');
 
   /* access is per payment channel: ending one never cuts another that is still paid */
@@ -430,6 +433,10 @@ try {
     subscriptions: { maia_annual: { store: 'app_store' } },
   } } }, () => billing.syncRevenueCat('u-ip'));
   assert.deepEqual({ ...peek("SELECT plan, billing_source FROM users WHERE id = 'u-ip'") }, { plan: 'annual', billing_source: 'app_store' }, 'RevenueCat sync applies store entitlement');
+  await stubbed({ 'https://api.revenuecat.com/v1/subscribers/u-ip': { subscriber: { entitlements: {}, subscriptions: {} } } }, () => billing.syncRevenueCat('u-ip'));
+  const afterMove = peek("SELECT billing_source, premium_until FROM users WHERE id = 'u-ip'");
+  assert.equal(afterMove.billing_source, 'stripe', 'store access ends when RevenueCat no longer lists it');
+  assert.ok(afterMove.premium_until > new Date().toISOString(), '...without touching a live Stripe subscription');
 
   /* account delete */
   assert.equal((await call('POST', '/api/account/delete')).status, 200);

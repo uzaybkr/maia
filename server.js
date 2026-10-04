@@ -345,7 +345,8 @@ const routes = {
     } else {
       // Free costs no AI: a starter ritual built from the onboarding answers. Capped only to stop row spam.
       if (rateLimited(`starter:${user.id}`, 10, DAY_MS)) return send(res, 429, AI_LIMIT);
-      [ritual, source] = [starterRitual(profile), 'starter'];
+      ritual = starterRitual(profile);
+      source = 'starter';
     }
     const id = crypto.randomUUID();
     run('INSERT INTO rituals (id, user_id, content, source, created_at) VALUES (?, ?, ?, ?, ?)', [id, user.id, JSON.stringify(ritual), source, new Date().toISOString()]);
