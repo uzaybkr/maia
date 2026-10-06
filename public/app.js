@@ -103,7 +103,7 @@ const maiaSays = (text) => `<div class="maia-says">${portrait('sm')}<p>${esc(tex
 function ring(pct) {
   const r = 34;
   const c = 2 * Math.PI * r;
-  return `<div class="ring-wrap"><svg class="ring" viewBox="0 0 80 80" aria-hidden="true"><circle class="track" cx="40" cy="40" r="${r}"/><circle class="fill" cx="40" cy="40" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}"/></svg><div class="ring-label">${pct}%</div></div>`;
+  return `<div class="ring-wrap"><svg class="ring" viewBox="0 0 80 80" aria-hidden="true"><circle class="track" cx="40" cy="40" r="${r}"/><circle class="fill" cx="40" cy="40" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}"/></svg><div class="ring-label">${fmtPct(pct)}</div></div>`;
 }
 
 let toastTimer;
@@ -122,12 +122,11 @@ function toast(message) {
 
 const TABS = [['#/home', 'Ritual', 'sparkle'], ['#/progress', 'Progress', 'trend'], ['#/shopping', 'Shop', 'bag'], ['#/chat', 'Maia', 'chat'], ['#/account', 'You', 'user']];
 
+// Real links, so the router's hashchange does the navigation and Cmd/middle-click and link semantics work.
 function tabbar(active) {
-  const bar = el('<nav class="tabbar" aria-label="Main"></nav>');
+  const bar = el(`<nav class="tabbar" aria-label="${t('Main')}"></nav>`);
   for (const [hash, label, ic] of TABS) {
-    const btn = el(`<button type="button" ${hash === active ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></button>`);
-    btn.addEventListener('click', () => nav(hash));
-    bar.appendChild(btn);
+    bar.appendChild(el(`<a href="${hash}" ${hash === active ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></a>`));
   }
   return bar;
 }
@@ -148,6 +147,9 @@ function mount(html, { tab, noir = false, bare = false, fill = false } = {}) {
 }
 
 const fmtDay = (iso) => new Date(iso).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long' });
+// Numbers in the reader's conventions: Turkish writes "%29" and "7,7".
+const fmtPct = (n) => new Intl.NumberFormat(LOCALE, { style: 'percent' }).format(n / 100);
+const fmtScore = (n) => new Intl.NumberFormat(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
 
 /* ---------- Arrival: sign in, verify, reset ---------- */
 
@@ -169,8 +171,8 @@ function renderAuth() {
       <button type="button" data-mode="signup">${t('Create account')}</button>
     </div>
     <form class="glass stack" id="authForm" novalidate>
-      <label class="field"><span>${t('Email')}</span><input class="input" type="email" id="email" autocomplete="email" placeholder="${t('you@example.com')}"></label>
-      <label class="field"><span>${t('Password')}</span><input class="input" type="password" id="password" placeholder="${t('At least 8 characters')}"></label>
+      <label class="field"><span>${t('Email')}</span><input class="input" type="email" id="email" name="email" autocomplete="email" spellcheck="false" autocapitalize="off" aria-describedby="err" placeholder="${t('you@example.com')}"></label>
+      <label class="field"><span>${t('Password')}</span><input class="input" type="password" id="password" name="password" aria-describedby="err" placeholder="${t('At least 8 characters')}"></label>
       <div class="stack" id="signupExtras">
         <label class="check"><input type="checkbox" id="age"><span class="box">${icon('check', 14)}</span><span>${t('I confirm I am 18 or older')}</span></label>
         <p class="fine">${t('By creating an account you agree to the <a href="/terms.html">Terms of Use</a> and <a href="/privacy.html">Privacy Policy</a>.')}</p>
@@ -199,6 +201,7 @@ function renderAuth() {
     const btn = wrap.querySelector('#submitBtn');
     err.hidden = true;
     btn.disabled = true;
+    btn.textContent = t(mode === 'login' ? 'Logging in…' : 'Creating account…');
     try {
       const data = await api('POST', mode === 'login' ? '/api/login' : '/api/signup', {
         email: wrap.querySelector('#email').value.trim(),
@@ -214,6 +217,7 @@ function renderAuth() {
       err.textContent = e2.message;
       err.hidden = false;
       btn.disabled = false;
+      btn.textContent = t(mode === 'login' ? 'Log in' : 'Create account');
     }
   });
 }
@@ -239,8 +243,8 @@ function renderForgot() {
       <p class="lede">${t("Enter your email and we'll send a link to choose a new one.")}</p>
     </section>
     <form class="glass stack" id="form" novalidate>
-      <label class="field"><span>${t('Email')}</span><input class="input" type="email" id="email" autocomplete="email"></label>
-      <button class="btn block" type="submit">${t('Send reset link')}</button>
+      <label class="field"><span>${t('Email')}</span><input class="input" type="email" id="email" name="email" autocomplete="email" spellcheck="false" autocapitalize="off" aria-describedby="msg"></label>
+      <button class="btn block" type="submit" id="sendBtn">${t('Send reset link')}</button>
       <p class="fine" id="msg" role="status"></p>
     </form>
   `, { noir: true });
@@ -248,12 +252,17 @@ function renderForgot() {
   wrap.querySelector('#form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = wrap.querySelector('#msg');
+    const btn = wrap.querySelector('#sendBtn');
+    btn.disabled = true;
+    btn.textContent = t('Sending…');
     try {
       await api('POST', '/api/password/forgot', { email: wrap.querySelector('#email').value.trim() });
       msg.textContent = t('If an account exists for that email, a reset link is on its way. It expires in one hour.');
     } catch (e2) {
       msg.textContent = e2.message;
     }
+    btn.disabled = false;
+    btn.textContent = t('Send reset link');
   });
 }
 
@@ -266,14 +275,18 @@ function renderReset(token) {
       <p class="lede">${t('Saving it signs you out on every device.')}</p>
     </section>
     <form class="glass stack" id="form" novalidate>
-      <label class="field"><span>${t('New password')}</span><input class="input" type="password" id="password" autocomplete="new-password" placeholder="${t('At least 8 characters')}"></label>
+      <label class="field"><span>${t('New password')}</span><input class="input" type="password" id="password" name="password" autocomplete="new-password" aria-describedby="err" placeholder="${t('At least 8 characters')}"></label>
       <p class="error" id="err" role="alert" hidden></p>
-      <button class="btn block" type="submit">${t('Save password')}</button>
+      <button class="btn block" type="submit" id="saveBtn">${t('Save password')}</button>
     </form>
   `, { noir: true });
   wrap.querySelector('#form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = wrap.querySelector('#err');
+    const btn = wrap.querySelector('#saveBtn');
+    err.hidden = true;
+    btn.disabled = true;
+    btn.textContent = t('Saving…');
     try {
       await api('POST', '/api/password/reset', { token, password: wrap.querySelector('#password').value });
       forgetSession();
@@ -282,6 +295,8 @@ function renderReset(token) {
     } catch (e2) {
       err.textContent = e2.message;
       err.hidden = false;
+      btn.disabled = false;
+      btn.textContent = t('Save password');
     }
   });
 }
@@ -514,8 +529,8 @@ function renderOnboarding() {
       ${maiaSays(t('Tell me what you love and what to avoid. Skip anything you like.'))}
       <h1>${t('A little about <em>you</em>')}</h1>
       <div class="glass stack">
-        <label class="field"><span>${t('What you love')}</span><textarea class="input" id="preferences" placeholder="${t('Light textures, fragrance-free, quick routines…')}">${esc(d.preferences)}</textarea></label>
-        <label class="field"><span>${t('What to avoid')}</span><textarea class="input" id="sensitivities" placeholder="${t('Retinol, strong scents, dairy…')}">${esc(d.sensitivities)}</textarea></label>
+        <label class="field"><span>${t('What you love')}</span><textarea class="input" id="preferences" name="preferences" autocomplete="off" placeholder="${t('Light textures, fragrance-free, quick routines…')}">${esc(d.preferences)}</textarea></label>
+        <label class="field"><span>${t('What to avoid')}</span><textarea class="input" id="sensitivities" name="sensitivities" autocomplete="off" placeholder="${t('Retinol, strong scents, dairy…')}">${esc(d.sensitivities)}</textarea></label>
       </div>
       <div class="actions"><button class="btn block" data-next>${t('Continue')}</button></div>
     `);
@@ -527,15 +542,15 @@ function renderOnboarding() {
       ${maiaSays(t('So I suggest products that suit your budget, where you live and the air around you.'))}
       <h1>${t('Budget and <em>climate</em>')}</h1>
       <div class="choice-list" role="radiogroup" aria-label="${t('Monthly budget')}">
-        ${BUDGETS.map(([v, name, range]) => `<button type="button" class="choice" data-budget="${esc(v)}" aria-pressed="${d.budget === v}"><span><strong>${t(name)}</strong><small>${t(range)}</small></span><span class="radio"></span></button>`).join('')}
+        ${BUDGETS.map(([v, name, range]) => `<button type="button" class="choice" role="radio" data-budget="${esc(v)}" aria-checked="${d.budget === v}"><span><strong>${t(name)}</strong><small>${t(range)}</small></span><span class="radio"></span></button>`).join('')}
       </div>
-      <label class="field"><span>${t('Where you live')}</span><input class="input" id="region" placeholder="${t('Dubai, UAE')}" value="${esc(d.region)}"></label>
+      <label class="field"><span>${t('Where you live')}</span><input class="input" id="region" name="region" autocomplete="address-level2" placeholder="${t('Dubai, UAE…')}" value="${esc(d.region)}"></label>
       <div class="field"><span>${t('Your climate')}</span><div class="chips">${CLIMATES.map((c) => `<button type="button" class="chip" data-climate="${esc(c)}" aria-pressed="${d.climate === c}">${esc(t(c))}</button>`).join('')}</div></div>
       <div class="actions"><button class="btn block" data-next>${t('Continue')}</button></div>
     `);
     wrap.querySelectorAll('[data-budget]').forEach((b) => b.addEventListener('click', () => {
       d.budget = b.dataset.budget;
-      wrap.querySelectorAll('[data-budget]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      wrap.querySelectorAll('[data-budget]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
     }));
     wrap.querySelectorAll('[data-climate]').forEach((b) => b.addEventListener('click', () => {
       d.climate = d.climate === b.dataset.climate ? '' : b.dataset.climate;
@@ -709,7 +724,7 @@ async function renderHome() {
         ${{ fallback: `<span class="pill" title="${t("Full personalization arrives once Maia's AI is connected")}">${t('Preview ritual')}</span>`, starter: `<span class="pill">${t('Starter ritual')}</span>` }[state.source] || '<span class="signature">Maia</span>'}
       </div>
     </section>
-    ${state.source === 'starter' ? premiumInvite(`<button class="btn block" id="inviteBtn">${t(state.user.is_premium ? 'Compose with my photos' : 'Discover Premium')}</button>`) : ''}
+    ${state.source === 'starter' ? premiumInvite(`<a class="btn block" href="${state.user.is_premium ? '#/compose' : '#/premium'}">${t(state.user.is_premium ? 'Compose with my photos' : 'Discover Premium')}</a>`) : ''}
     <div class="seg" role="group" aria-label="${t('Ritual moment')}">
       ${moments.map(([k, label, ic]) => `<button type="button" data-seg="${k}" aria-pressed="${seg === k}">${icon(ic, 16)}${t(label)}</button>`).join('')}
     </div>
@@ -729,7 +744,6 @@ async function renderHome() {
     </div>
   `, { tab: '#/home' });
 
-  wrap.querySelector('#inviteBtn')?.addEventListener('click', () => nav(state.user.is_premium ? '#/compose' : '#/premium'));
   wrap.querySelectorAll('[data-seg]').forEach((b) => b.addEventListener('click', () => { state.segment = b.dataset.seg; renderHome(); }));
   wrap.querySelectorAll('.step').forEach((row) => row.addEventListener('click', async () => {
     if (row.classList.contains('done')) return;
@@ -818,8 +832,8 @@ async function renderProgress() {
   const metrics = latest ? Object.entries(latest.metrics).map(([name, score]) => {
     const prev = base?.metrics?.[name];
     const delta = typeof prev === 'number' ? Math.round((score - prev) * 10) / 10 : null;
-    const chip = delta === null ? '' : `<span class="delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : delta < 0 ? '−' : '±'}${Math.abs(delta).toFixed(1)}</span>`;
-    return `<div class="metric-row"><span class="name">${esc(t(cap(name)))}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, score * 10))}%"></i></span><span class="val"><strong>${Number(score).toFixed(1)}</strong>${chip}</span></div>`;
+    const chip = delta === null ? '' : `<span class="delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : delta < 0 ? '−' : '±'}${fmtScore(Math.abs(delta))}</span>`;
+    return `<div class="metric-row"><span class="name">${esc(t(cap(name)))}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, score * 10))}%"></i></span><span class="val"><strong>${fmtScore(Number(score))}</strong>${chip}</span></div>`;
   }).join('') : '';
 
   const wrap = mount(`
@@ -860,7 +874,7 @@ async function renderProgress() {
       <div id="keepSlot"></div>
       <p class="error" id="err" role="alert" hidden></p>
       <button class="btn block" id="analyzeBtn">${t('Analyze')}</button>
-    </section>` : premiumInvite(`<button class="btn block" id="inviteBtn">${t('Discover Premium')}</button>`)}
+    </section>` : premiumInvite(`<a class="btn block" href="#/premium">${t('Discover Premium')}</a>`)}
     ${policyDetails()}
     ${exams.length > 1 ? `
       <section class="glass">
@@ -871,10 +885,8 @@ async function renderProgress() {
         }).join('')}</div>
       </section>` : ''}
   `, { tab: '#/progress' });
-
   wrap.querySelector('#captureSlot')?.appendChild(photoCapture(kind, newPhoto));
   wrap.querySelector('#keepSlot')?.appendChild(keepOnDeviceToggle());
-  wrap.querySelector('#inviteBtn')?.addEventListener('click', () => nav('#/premium'));
   wrap.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => { state.progressKind = b.dataset.kind; render(); }));
   wrap.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { state.compareMode = b.dataset.mode; render(); }));
   wrap.querySelector('#clearDevice')?.addEventListener('click', async () => {
@@ -916,9 +928,8 @@ async function renderChat() {
         <h1>${t('Talk with <em>Maia</em>')}</h1>
         <p class="lede">${t('Ask about your ritual, swaps and progress. Calm answers, grounded in your own plan.')}</p>
       </section>
-      <button class="btn block" id="upgradeBtn">${icon('gem', 18)} ${t('Unlock with Premium')}</button>
+      <a class="btn block" href="#/premium">${icon('gem', 18)} ${t('Unlock with Premium')}</a>
     `, { tab: '#/chat' });
-    wrap.querySelector('#upgradeBtn').addEventListener('click', () => nav('#/premium'));
     return;
   }
 
@@ -975,8 +986,8 @@ function renderAccount() {
   const wrap = mount(`
     <header class="row"><span class="monogram">${esc((u.email[0] || 'M').toUpperCase())}</span><div class="stack" style="gap:6px;min-width:0"><strong class="email">${esc(u.email)}</strong><span><span class="pill ${u.is_premium ? 'sage' : ''}">${esc(plan)}</span></span></div></header>
     <section class="glass list">
-      <button class="list-row" id="premiumRow"><span class="ic">${icon('gem')}</span><span class="grow">Maia Premium<small>${u.is_premium && u.premium_until ? t('Renews or ends {date}', { date: esc(fmtDay(u.premium_until)) }) : t('Revisions, chat with Maia and more')}</small></span><span class="chev">${icon('chev', 18)}</span></button>
-      <button class="list-row" id="remindersRow"><span class="ic">${icon('bell')}</span><span class="grow">${t('Ritual reminders')}<small>${esc(reminderText)}</small></span><span class="chev">${icon('chev', 18)}</span></button>
+      <a class="list-row" href="#/premium"><span class="ic">${icon('gem')}</span><span class="grow">Maia Premium<small>${u.is_premium && u.premium_until ? t('Renews or ends {date}', { date: esc(fmtDay(u.premium_until)) }) : t('Revisions, chat with Maia and more')}</small></span><span class="chev">${icon('chev', 18)}</span></a>
+      <a class="list-row" href="#/reminders"><span class="ic">${icon('bell')}</span><span class="grow">${t('Ritual reminders')}<small>${esc(reminderText)}</small></span><span class="chev">${icon('chev', 18)}</span></a>
       <button class="list-row" id="langRow"><span class="ic">${icon('globe')}</span><span class="grow">${t('Language')}<small>${LANG === 'tr' ? 'Türkçe' : 'English'}</small></span><span class="chev">${icon('chev', 18)}</span></button>
     </section>
     <div class="eyebrow list-label">${t('Privacy')}</div>
@@ -991,8 +1002,6 @@ function renderAccount() {
       <button class="list-row" id="logoutBtn"><span class="ic">${icon('out')}</span><span class="grow">${t('Log out')}</span></button>
     </section>
   `, { tab: '#/account' });
-  wrap.querySelector('#premiumRow').addEventListener('click', () => nav('#/premium'));
-  wrap.querySelector('#remindersRow').addEventListener('click', () => nav('#/reminders'));
   wrap.querySelector('#langRow').addEventListener('click', () => setLang(LANG === 'tr' ? 'en' : 'tr'));
   wrap.querySelector('#logoutBtn').addEventListener('click', logout);
   wrap.querySelector('#deleteBtn').addEventListener('click', async () => {
@@ -1190,7 +1199,6 @@ async function renderPremium(status) {
       <p class="fine" id="disclosure"></p>`}
     <p class="fine center"><a href="/terms.html">${t('Terms of Use')}</a> · <a href="/privacy.html">${t('Privacy Policy')}</a></p>
   `, { noir: true });
-
   wrap.querySelector('#closeBtn').addEventListener('click', () => (history.length > 1 ? history.back() : nav('#/home')));
   const buyBtn = wrap.querySelector('#buyBtn');
   const disclosure = wrap.querySelector('#disclosure');

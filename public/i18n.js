@@ -13,6 +13,11 @@ window.MAIA_TR = {
   [`Continue`]: `Devam et`,
   [`Account`]: `Hesap`,
   [`Premium`]: `Premium`,
+  [`Main`]: `Ana menü`,
+  [`Logging in…`]: `Giriş yapılıyor…`,
+  [`Creating account…`]: `Hesap oluşturuluyor…`,
+  [`Sending…`]: `Gönderiliyor…`,
+  [`Saving…`]: `Kaydediliyor…`,
 
   // Arrival
   [`Maia · Self-care concierge`]: `<span lang="en">Maia</span> · Kişisel bakım asistanın`,
@@ -102,7 +107,7 @@ window.MAIA_TR = {
   [`Indulgent`]: `Lüks`,
   [`$100 or more a month`]: `Premium markalar`,
   [`Where you live`]: `Yaşadığın şehir`,
-  [`Dubai, UAE`]: `İstanbul`,
+  [`Dubai, UAE…`]: `İstanbul…`,
   [`Your climate`]: `İklim`,
   [`Hot & dry`]: `Sıcak ve kuru`,
   [`Hot & humid`]: `Sıcak ve nemli`,
