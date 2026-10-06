@@ -96,8 +96,8 @@ const icon = (name, size = 20) => `<svg class="i" width="${size}" height="${size
 
 const MAIA_FULL = '/assets/maia.jpg';
 const MAIA_FACE = '/assets/maia-face.jpg';
-const arch = (size = '', halo = false) => `<div class="arch-wrap">${halo ? '<div class="halo"></div>' : ''}<div class="arch ${size}"><img src="${MAIA_FULL}" alt="Maia"></div></div>`;
-const portrait = (size = '') => `<span class="avatar ${size}"><img src="${MAIA_FACE}" alt="Maia"></span>`;
+const arch = (size = '', halo = false) => `<div class="arch-wrap">${halo ? '<div class="halo"></div>' : ''}<div class="arch ${size}"><img src="${MAIA_FULL}" alt="Maia" width="900" height="900"${size === 'lg' ? ' fetchpriority="high"' : ''}></div></div>`;
+const portrait = (size = '') => `<span class="avatar ${size}"><img src="${MAIA_FACE}" alt="Maia" width="320" height="320"></span>`;
 const maiaSays = (text) => `<div class="maia-says">${portrait('sm')}<p>${esc(text)}</p></div>`;
 
 function ring(pct) {
@@ -140,6 +140,7 @@ function mount(html, { tab, noir = false, bare = false, fill = false } = {}) {
   mountedKey = key;
   const wrap = el(`<main class="screen ${noir ? 'noir' : ''} ${bare || !tab ? 'bare' : ''} ${fill ? 'fill' : ''} ${same ? 'still' : ''}">${html}</main>`);
   const y = window.scrollY;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', noir ? '#2a1f1a' : '#c5d0c2'); // browser bar matches the screen
   app.replaceChildren(...(noir ? [el('<div class="noir-bg"></div>')] : []), wrap);
   if (tab) app.appendChild(tabbar(tab));
   window.scrollTo(0, same ? y : 0);
@@ -515,7 +516,7 @@ function renderOnboarding() {
       <div class="goal-grid">
         ${GOALS.map(([g, ic]) => `<button type="button" class="goal" data-goal="${esc(g)}" aria-pressed="${d.goals.includes(g)}"><span class="goal-icon">${icon(ic, 18)}</span>${esc(t(g))}</button>`).join('')}
       </div>
-      <div class="actions"><button class="btn block" data-next ${d.goals.length ? '' : 'disabled'}>${t('Continue')}</button></div>
+      <div class="actions"><button class="btn block" data-next ${d.goals.length ? '' : 'disabled'}>${t('Next: preferences')}</button></div>
     `);
     wrap.querySelectorAll('[data-goal]').forEach((b) => b.addEventListener('click', () => {
       const g = b.dataset.goal;
@@ -532,7 +533,7 @@ function renderOnboarding() {
         <label class="field"><span>${t('What you love')}</span><textarea class="input" id="preferences" name="preferences" autocomplete="off" placeholder="${t('Light textures, fragrance-free, quick routines…')}">${esc(d.preferences)}</textarea></label>
         <label class="field"><span>${t('What to avoid')}</span><textarea class="input" id="sensitivities" name="sensitivities" autocomplete="off" placeholder="${t('Retinol, strong scents, dairy…')}">${esc(d.sensitivities)}</textarea></label>
       </div>
-      <div class="actions"><button class="btn block" data-next>${t('Continue')}</button></div>
+      <div class="actions"><button class="btn block" data-next>${t('Next: budget & climate')}</button></div>
     `);
     const save = () => { d.preferences = wrap.querySelector('#preferences').value; d.sensitivities = wrap.querySelector('#sensitivities').value; };
     wrap.querySelectorAll('textarea').forEach((t) => t.addEventListener('input', save));
@@ -546,7 +547,7 @@ function renderOnboarding() {
       </div>
       <label class="field"><span>${t('Where you live')}</span><input class="input" id="region" name="region" autocomplete="address-level2" placeholder="${t('Dubai, UAE…')}" value="${esc(d.region)}"></label>
       <div class="field"><span>${t('Your climate')}</span><div class="chips">${CLIMATES.map((c) => `<button type="button" class="chip" data-climate="${esc(c)}" aria-pressed="${d.climate === c}">${esc(t(c))}</button>`).join('')}</div></div>
-      <div class="actions"><button class="btn block" data-next>${t('Continue')}</button></div>
+      <div class="actions"><button class="btn block" data-next>${t('Next: last step')}</button></div>
     `);
     wrap.querySelectorAll('[data-budget]').forEach((b) => b.addEventListener('click', () => {
       d.budget = b.dataset.budget;
@@ -712,7 +713,7 @@ async function renderHome() {
     </header>
     <section class="glass maia-note">
       <div class="top">
-        <div class="arch xs"><img src="${MAIA_FULL}" alt="Maia"></div>
+        <div class="arch xs"><img src="${MAIA_FULL}" alt="Maia" width="900" height="900"></div>
         <div>
           <div class="eyebrow">${t('A note from Maia')}</div>
           <p class="quote">${esc(r.summary)}</p>
@@ -937,8 +938,9 @@ async function renderChat() {
   const hour = new Date().getHours();
   const hello = t("{greeting}. I'm here whenever you want to adjust your ritual or ask about a product.", { greeting: t(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening') });
   const wrap = mount(`
+    <h1 class="sr-only">${t('Talk with Maia')}</h1>
     <header class="chat-head">
-      <div class="arch xs"><img src="${MAIA_FULL}" alt="Maia"></div>
+      <div class="arch xs"><img src="${MAIA_FULL}" alt="Maia" width="900" height="900"></div>
       <div><h2>Maia</h2><div class="status">${t('Here for your ritual')}</div></div>
     </header>
     <div class="chat-log" id="log" aria-live="polite">
@@ -984,6 +986,7 @@ function renderAccount() {
   const reminders = loadReminders();
   const reminderText = [reminders.am.on && t('Morning {time}', { time: reminders.am.time }), reminders.pm.on && t('Evening {time}', { time: reminders.pm.time })].filter(Boolean).join(' · ') || t('Off');
   const wrap = mount(`
+    <h1 class="sr-only">${t('You')}</h1>
     <header class="row"><span class="monogram">${esc((u.email[0] || 'M').toUpperCase())}</span><div class="stack" style="gap:6px;min-width:0"><strong class="email">${esc(u.email)}</strong><span><span class="pill ${u.is_premium ? 'sage' : ''}">${esc(plan)}</span></span></div></header>
     <section class="glass list">
       <a class="list-row" href="#/premium"><span class="ic">${icon('gem')}</span><span class="grow">Maia Premium<small>${u.is_premium && u.premium_until ? t('Renews or ends {date}', { date: esc(fmtDay(u.premium_until)) }) : t('Revisions, chat with Maia and more')}</small></span><span class="chev">${icon('chev', 18)}</span></a>
