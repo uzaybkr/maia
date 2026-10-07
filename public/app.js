@@ -106,6 +106,29 @@ function ring(pct) {
   return `<div class="ring-wrap"><svg class="ring" viewBox="0 0 80 80" aria-hidden="true"><circle class="track" cx="40" cy="40" r="${r}"/><circle class="fill" cx="40" cy="40" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}"/></svg><div class="ring-label">${fmtPct(pct)}</div></div>`;
 }
 
+/* ---------- Motion (anime.js, vendored in /vendor) ---------- */
+// Off when the phone asks for reduced motion, or if the library failed to load: screens then simply appear.
+const MOTION = Boolean(window.anime) && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Sections arrive one after another. Fixed bars (the chat composer) keep their own positioning transform.
+function enter(wrap) {
+  if (!MOTION) return;
+  const parts = [...wrap.children].filter((n) => getComputedStyle(n).position !== 'fixed');
+  parts.forEach((n) => { n.style.opacity = '0'; }); // hidden before the first frame, so nothing flashes
+  anime.animate(parts, {
+    opacity: [0, 1], y: [16, 0], duration: 600, delay: anime.stagger(60), ease: 'outQuart',
+    onComplete: () => parts.forEach((n) => n.style.removeProperty('transform')), // no leftover transform to trap fixed children
+  });
+}
+
+// Tweens a number, handing each frame's value to draw(); with motion off it draws the end value at once.
+function tween(from, to, draw, delay = 0) {
+  if (!MOTION || from === to) return draw(to);
+  const o = { v: from };
+  draw(from);
+  anime.animate(o, { v: to, duration: 900, delay, ease: 'outExpo', onUpdate: () => draw(o.v) });
+}
+
 let toastTimer;
 function toast(message) {
   let t = document.querySelector('.toast');
@@ -144,6 +167,7 @@ function mount(html, { tab, noir = false, bare = false, fill = false } = {}) {
   app.replaceChildren(...(noir ? [el('<div class="noir-bg"></div>')] : []), wrap);
   if (tab) app.appendChild(tabbar(tab));
   window.scrollTo(0, same ? y : 0);
+  if (!same) enter(wrap);
   return wrap;
 }
 
@@ -745,6 +769,15 @@ async function renderHome() {
     </div>
   `, { tab: '#/home' });
 
+  // The ring fills from 0 on arrival, and from the last value after ticking a step.
+  const ringEl = wrap.querySelector('.ring-wrap');
+  const arc = ringEl.querySelector('.fill');
+  const arcLen = Number(arc.getAttribute('stroke-dasharray'));
+  tween(wrap.classList.contains('still') ? state.shownPct ?? pct : 0, pct, (p) => {
+    arc.setAttribute('stroke-dashoffset', (arcLen * (1 - p / 100)).toFixed(1));
+    ringEl.querySelector('.ring-label').textContent = fmtPct(Math.round(p));
+  });
+  state.shownPct = pct;
   wrap.querySelectorAll('[data-seg]').forEach((b) => b.addEventListener('click', () => { state.segment = b.dataset.seg; renderHome(); }));
   wrap.querySelectorAll('.step').forEach((row) => row.addEventListener('click', async () => {
     if (row.classList.contains('done')) return;
@@ -787,7 +820,7 @@ async function renderShopping() {
   const total = now.reduce((n, i) => n + priceOf(i.est_price), 0);
   const money = (n) => (now[0]?.est_price || '$0').replace(/[\d.,]+/, n.toLocaleString(LOCALE)); // total in the picks' own currency
   const product = (it) => `<div class="product"><div><h3>${esc(it.item)}</h3><p>${esc(it.reason)}</p></div><span class="price">${esc(it.est_price)}</span></div>`;
-  mount(items.length ? `
+  const wrap = mount(items.length ? `
     <header class="row">${portrait()}<div><div class="eyebrow">${t("Maia’s picks")}</div><h1>${t('What matters <em>first</em>')}</h1></div></header>
     <p class="lede">${t(total
       ? (now.length === 1 ? '{n} essential for {total}. Everything else can wait.' : '{n} essentials for {total}. Everything else can wait.')
@@ -801,6 +834,9 @@ async function renderShopping() {
   ` : `
     <section class="hero">${arch('sm')}<h1>${t('Your ritual <em>comes first</em>')}</h1><p class="lede">${t('Once your ritual is composed, Maia picks the few things worth buying.')}</p></section>
   `, { tab: '#/shopping' });
+  const totalEl = wrap.querySelector('.total .price');
+  const decimals = Number.isInteger(total) ? 0 : 2;
+  if (totalEl) tween(0, total, (v) => { totalEl.textContent = money(Number(v.toFixed(decimals))); }, 300);
 }
 
 /* ---------- Progress: examinations + on-device photos ---------- */
@@ -834,7 +870,7 @@ async function renderProgress() {
     const prev = base?.metrics?.[name];
     const delta = typeof prev === 'number' ? Math.round((score - prev) * 10) / 10 : null;
     const chip = delta === null ? '' : `<span class="delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : delta < 0 ? '−' : '±'}${fmtScore(Math.abs(delta))}</span>`;
-    return `<div class="metric-row"><span class="name">${esc(t(cap(name)))}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, score * 10))}%"></i></span><span class="val"><strong>${fmtScore(Number(score))}</strong>${chip}</span></div>`;
+    return `<div class="metric-row"><span class="name">${esc(t(cap(name)))}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, score * 10))}%"></i></span><span class="val"><strong data-v="${Number(score)}">${fmtScore(Number(score))}</strong>${chip}</span></div>`;
   }).join('') : '';
 
   const wrap = mount(`
@@ -886,6 +922,11 @@ async function renderProgress() {
         }).join('')}</div>
       </section>` : ''}
   `, { tab: '#/progress' });
+  // Bars grow one after another while their scores count up.
+  const bars = wrap.querySelectorAll('.metric-row .bar i');
+  if (MOTION) bars.forEach((b) => { b.style.transform = 'scaleX(0)'; });
+  if (MOTION && bars.length) anime.animate(bars, { scaleX: [0, 1], duration: 800, delay: anime.stagger(70, { start: 200 }), ease: 'outExpo' });
+  wrap.querySelectorAll('.metric-row .val strong').forEach((s, i) => tween(0, Number(s.dataset.v), (v) => { s.textContent = fmtScore(v); }, 200 + i * 70));
   wrap.querySelector('#captureSlot')?.appendChild(photoCapture(kind, newPhoto));
   wrap.querySelector('#keepSlot')?.appendChild(keepOnDeviceToggle());
   wrap.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => { state.progressKind = b.dataset.kind; render(); }));
