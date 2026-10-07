@@ -178,7 +178,7 @@ function takeAiCall(user, kind) {
   run('INSERT INTO ai_calls (user_id, kind, created_at) VALUES (?, ?, ?)', [user.id, kind, new Date().toISOString()]);
   return true;
 }
-const AI_LIMIT = { error: "That's all for now. Maia will be ready again soon." };
+const AI_LIMIT = { error: 'That’s all for now. Maia will be ready again soon.' };
 
 // Periodic cleanup: expired photos (end of the user's day) and AI-call records older than the longest limit window.
 function housekeeping() {
@@ -335,7 +335,7 @@ const routes = {
     if (body.consent !== true) return send(res, 400, { error: 'Photo consent is required' });
     if (!takeAiCall(user, 'examination')) return send(res, 429, AI_LIMIT);
     const { examination, source } = await examinePhoto(kind, photo, user.lang);
-    if (!examination) return send(res, 503, { error: "Maia couldn't analyze this photo right now. Please try again in a few minutes." });
+    if (!examination) return send(res, 503, { error: 'Maia couldn’t analyze this photo right now. Please try again in a few minutes.' });
     // Sealed and kept only until the end of the user's local day, then purged; the examination is what we keep.
     const photoExpiresAt = storePhoto(user.id, kind, photo, body.tzOffset);
     const row = { id: crypto.randomUUID(), kind, ...examination, source, created_at: new Date().toISOString() };
@@ -441,7 +441,7 @@ const routes = {
         await cancelStripeSubscriptions(user.stripe_customer_id);
       } catch (err) {
         console.error('[billing] cancel on delete failed:', err.message);
-        return send(res, 502, { error: "We couldn't cancel your subscription, so your account was not deleted. Please try again." });
+        return send(res, 502, { error: 'We couldn’t cancel your subscription, so your account was not deleted. Please try again.' });
       }
     }
     deletePhotos(user.id);

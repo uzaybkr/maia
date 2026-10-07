@@ -241,7 +241,7 @@ function renderForgot() {
       ${arch('sm')}
       <div class="eyebrow">${t('Account')}</div>
       <h1>${t('Reset your <em>password</em>')}</h1>
-      <p class="lede">${t("Enter your email and we'll send a link to choose a new one.")}</p>
+      <p class="lede">${t("Enter your email and we’ll send a link to choose a new one.")}</p>
     </section>
     <form class="glass stack" id="form" novalidate>
       <label class="field"><span>${t('Email')}</span><input class="input" type="email" id="email" name="email" autocomplete="email" spellcheck="false" autocapitalize="off" aria-describedby="msg"></label>
@@ -313,11 +313,11 @@ function renderVerifyEmail(failed) {
     ${failed ? `<p class="error center" role="alert">${t('That link is invalid or has expired. Send yourself a new one below.')}</p>` : ''}
     ${state.devVerifyUrl ? `
       <div class="glass dev-note stack">
-        <p class="fine">${t("<strong>Development mode:</strong> email sending isn't connected yet, so no email was sent. Confirm here instead.")}</p>
+        <p class="fine">${t("<strong>Development mode:</strong> email sending isn’t connected yet, so no email was sent. Confirm here instead.")}</p>
         <a class="btn block" href="${esc(state.devVerifyUrl)}">${t('Confirm my email now')}</a>
       </div>` : ''}
     <div class="stack">
-      <button class="btn ${state.devVerifyUrl ? 'ghost' : ''} block" id="checkBtn">${t("I've confirmed, continue")}</button>
+      <button class="btn ${state.devVerifyUrl ? 'ghost' : ''} block" id="checkBtn">${t("I’ve confirmed, continue")}</button>
       <button class="btn ghost block" id="resendBtn">${icon('mail', 18)} ${t('Send the email again')}</button>
       <p class="fine center" id="msg" role="status"></p>
       <button class="btn quiet" id="logoutBtn">${t('Use a different account')}</button>
@@ -365,7 +365,7 @@ const kindName = (k) => t(cap(k));
 
 const POLICY_POINTS = `
   <ul>
-    <li>${t("Analyzed to create your written examination and today's ritual")}</li>
+    <li>${t("Analyzed to create your written examination and today’s ritual")}</li>
     <li>${t('Kept encrypted only until the end of your day, then permanently deleted')}</li>
     <li>${t('Never stored long-term, never in backups, never used to train AI')}</li>
     <li>${t('Want to compare photos over time? Keep a copy on this phone')}</li>
@@ -503,15 +503,15 @@ function renderOnboarding() {
       <section class="hero" style="padding-top:18px">
         ${arch('lg', true)}
         <div class="eyebrow">${t('Welcome to Maia')}</div>
-        <h1 class="display">${t("Let's compose your <em>first ritual.</em>")}</h1>
-        <p class="lede">${t("Four gentle questions, about three minutes. I'll take it from there.")}</p>
+        <h1 class="display">${t("Let’s compose your <em>first ritual.</em>")}</h1>
+        <p class="lede">${t("Four gentle questions, about three minutes. I’ll take it from there.")}</p>
       </section>
       <button class="btn block" data-next>${t('Begin')}</button>
     `);
   } else if (d.step === 1) {
     wrap = mount(`
       ${top(1)}
-      ${maiaSays(t("Choose what you'd like to feel. I'll shape everything around it."))}
+      ${maiaSays(t("Choose what you’d like to feel. I’ll shape everything around it."))}
       <h1>${t('What would you like to <em>feel?</em>')}</h1>
       <div class="goal-grid">
         ${GOALS.map(([g, ic]) => `<button type="button" class="goal" data-goal="${esc(g)}" aria-pressed="${d.goals.includes(g)}"><span class="goal-icon">${icon(ic, 18)}</span>${esc(t(g))}</button>`).join('')}
@@ -561,7 +561,7 @@ function renderOnboarding() {
   } else if (!state.user.is_premium) {
     wrap = mount(`
       ${top(4)}
-      ${maiaSays(t("I'll begin with a ritual built from your answers. With Premium, I read your photos and write it just for you."))}
+      ${maiaSays(t("I’ll begin with a ritual built from your answers. With Premium, I read your photos and write it just for you."))}
       <h1>${t('Your <em>starter</em> ritual')}</h1>
       ${premiumInvite()}
       <div class="actions"><button class="btn block" id="composeBtn">${t('Compose my starter ritual')}</button></div>
@@ -722,7 +722,7 @@ async function renderHome() {
       <div class="foot">
         ${ring(pct)}
         <div style="flex:1"><strong>${t('{done} of {total}', { done, total })}</strong><span class="muted">${t('steps today')}</span></div>
-        ${{ fallback: `<span class="pill" title="${t("Full personalization arrives once Maia's AI is connected")}">${t('Preview ritual')}</span>`, starter: `<span class="pill">${t('Starter ritual')}</span>` }[state.source] || '<span class="signature">Maia</span>'}
+        ${{ fallback: `<span class="pill" title="${t("Full personalization arrives once Maia’s AI is connected")}">${t('Preview ritual')}</span>`, starter: `<span class="pill">${t('Starter ritual')}</span>` }[state.source] || '<span class="signature">Maia</span>'}
       </div>
     </section>
     ${state.source === 'starter' ? premiumInvite(`<a class="btn block" href="${state.user.is_premium ? '#/compose' : '#/premium'}">${t(state.user.is_premium ? 'Compose with my photos' : 'Discover Premium')}</a>`) : ''}
@@ -755,7 +755,7 @@ async function renderHome() {
       state.progress = data.progress;
       if (state.progress.length === total) toast(t('Every step done today. Beautifully kept.'));
     } catch (e) {
-      toast(t("Couldn't save that step: {error}", { error: e.message }));
+      toast(t("Couldn’t save that step: {error}", { error: e.message }));
     }
     renderHome();
   }));
@@ -788,7 +788,7 @@ async function renderShopping() {
   const money = (n) => (now[0]?.est_price || '$0').replace(/[\d.,]+/, n.toLocaleString(LOCALE)); // total in the picks' own currency
   const product = (it) => `<div class="product"><div><h3>${esc(it.item)}</h3><p>${esc(it.reason)}</p></div><span class="price">${esc(it.est_price)}</span></div>`;
   mount(items.length ? `
-    <header class="row">${portrait()}<div><div class="eyebrow">${t("Maia's picks")}</div><h1>${t('What matters <em>first</em>')}</h1></div></header>
+    <header class="row">${portrait()}<div><div class="eyebrow">${t("Maia’s picks")}</div><h1>${t('What matters <em>first</em>')}</h1></div></header>
     <p class="lede">${t(total
       ? (now.length === 1 ? '{n} essential for {total}. Everything else can wait.' : '{n} essentials for {total}. Everything else can wait.')
       : (now.length === 1 ? '{n} essential. Everything else can wait.' : '{n} essentials. Everything else can wait.'), { n: now.length, total: esc(money(total)) })}</p>
@@ -797,7 +797,7 @@ async function renderShopping() {
       ${now.map(product).join('')}
       ${total ? `<div class="total"><span>${t('Essentials total')}</span><span class="price">${esc(money(total))}</span></div>` : ''}
     </section>
-    ${later.length ? `<section class="glass soft"><div class="eyebrow" style="margin-bottom:4px">${t("When you're ready")}</div>${later.map(product).join('')}</section>` : ''}
+    ${later.length ? `<section class="glass soft"><div class="eyebrow" style="margin-bottom:4px">${t("When you’re ready")}</div>${later.map(product).join('')}</section>` : ''}
   ` : `
     <section class="hero">${arch('sm')}<h1>${t('Your ritual <em>comes first</em>')}</h1><p class="lede">${t('Once your ritual is composed, Maia picks the few things worth buying.')}</p></section>
   `, { tab: '#/shopping' });
@@ -870,7 +870,7 @@ async function renderProgress() {
       </section>` : ''}
     ${state.user.is_premium ? `
     <section class="glass stack">
-      <h2>${t("Today's <em>check-in</em>")}</h2>
+      <h2>${t("Today’s <em>check-in</em>")}</h2>
       <div id="captureSlot"></div>
       <div id="keepSlot"></div>
       <p class="error" id="err" role="alert" hidden></p>
@@ -936,7 +936,7 @@ async function renderChat() {
 
   const history = await api('GET', '/api/chat/history');
   const hour = new Date().getHours();
-  const hello = t("{greeting}. I'm here whenever you want to adjust your ritual or ask about a product.", { greeting: t(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening') });
+  const hello = t("{greeting}. I’m here whenever you want to adjust your ritual or ask about a product.", { greeting: t(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening') });
   const wrap = mount(`
     <h1 class="sr-only">${t('Talk with Maia')}</h1>
     <header class="chat-head">
@@ -1069,7 +1069,7 @@ function renderReminders() {
   const wrap = mount(`
     <div class="wizard-top"><button class="icon-btn" id="backBtn" aria-label="${t('Back')}">${icon('back')}</button></div>
     <header><div class="eyebrow">${t('Reminders')}</div><h1>${t('A gentle <em>nudge</em>')}</h1></header>
-    ${maiaSays(t("I'll remind you once in the morning and once in the evening. Nothing more."))}
+    ${maiaSays(t("I’ll remind you once in the morning and once in the evening. Nothing more."))}
     ${NATIVE ? '' : `<p class="note">${t('Reminders work in the Maia app for iPhone and Android.')}</p>`}
     <section class="glass stack">
       ${row('am', 'Morning ritual', 'Every day')}
@@ -1177,7 +1177,7 @@ async function renderPremium(status) {
     <div class="rule"></div>
     ${u.is_premium ? `
       <section class="glass stack">
-        <h2>${t("You're on <em>Premium</em>")}</h2>
+        <h2>${t("You’re on <em>Premium</em>")}</h2>
         <p class="lede">${t('{plan} plan', { plan: esc(t(cap(u.plan || 'monthly'))) })}${u.premium_until ? t(' · renews or ends {date}', { date: esc(fmtDay(u.premium_until)) }) : ''}</p>
         <p class="fine">${esc(t(manageHint))}</p>
         ${u.billing_source === 'stripe' && !NATIVE ? `<button class="btn ghost block" id="portalBtn">${t('Manage subscription')}</button>` : ''}
