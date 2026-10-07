@@ -1,6 +1,6 @@
 # Maia v0.2 plan: payments, verification, 3 apps, zero-retention photos
 
-Source requirements: user request 2026-09-25 + `founder-pack/maia-prd.md` (P0 subscription gating, P2 annual plan, privacy section 13).
+Source requirements: user request 2026-09-25 + `archive/founder-pack/maia-prd.md` (P0 subscription gating, P2 annual plan, privacy section 13).
 
 ## Decisions (defaults — change before Phase 1 starts if wrong)
 
