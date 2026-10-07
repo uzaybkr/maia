@@ -570,7 +570,7 @@ function renderOnboarding() {
   } else {
     wrap = mount(`
       ${top(4)}
-      ${photoStep(d, "Optional. A photo shows me where to start, and it's gone from our servers by tonight.")}
+      ${photoStep(d, 'Optional. A photo shows me where to start, and it’s gone from our servers by tonight.')}
       <div class="actions">
         <button class="btn block" id="composeBtn">${t('Compose my ritual')}</button>
         <button class="btn quiet" id="skipBtn">${t('Skip photos for now')}</button>
@@ -609,7 +609,7 @@ function renderCompose() {
   if (!state.user.is_premium) return nav('#/premium');
   const d = { goals: [], photos: { skin: null, hair: null, posture: null } };
   const wrap = mount(`
-    ${photoStep(d, "Add one photo or all three. It's gone from our servers by tonight.")}
+    ${photoStep(d, 'Add one photo or all three. It’s gone from our servers by tonight.')}
     <div class="actions"><button class="btn block" id="composeBtn">${t('Compose my ritual')}</button></div>
   `, { tab: '#/home' });
   wirePhotoStep(wrap, d);
@@ -1197,9 +1197,9 @@ async function renderPremium(status) {
       </div>
       <p class="error" id="err" role="alert" hidden></p>
       <button class="btn block" id="buyBtn"></button>
+      <p class="fine" id="disclosure"></p>
       ${NATIVE ? `<button class="btn quiet" id="restoreBtn">${t('Restore purchases')}</button>` : ''}
-      ${billing.devUpgrade ? `<button class="btn ghost small" id="devBtn">${t('Payments not configured: unlock for testing')}</button>` : ''}
-      <p class="fine" id="disclosure"></p>`}
+      ${billing.devUpgrade ? `<button class="btn ghost small" id="devBtn">${t('Payments not configured: unlock for testing')}</button>` : ''}`}
     <p class="fine center"><a href="/terms.html">${t('Terms of Use')}</a> · <a href="/privacy.html">${t('Privacy Policy')}</a></p>
   `, { noir: true });
   wrap.querySelector('#closeBtn').addEventListener('click', () => (history.length > 1 ? history.back() : nav('#/home')));

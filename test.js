@@ -77,6 +77,7 @@ assert.equal(esc(`<i onx="a('b')">&`), '&lt;i onx=&quot;a(&#39;b&#39;)&quot;&gt;
 const TR = new Function('window', `${fs.readFileSync('public/i18n.js', 'utf8')}; return window.MAIA_TR;`)({});
 const shown = [...appSrc.matchAll(/\bt\((['"])((?:(?!\1).)*)\1/g)].map((m) => m[2]);
 assert.deepEqual(shown.filter((k) => !(k in TR)), [], 'every phrase in the app has Turkish');
+assert.deepEqual(Object.keys(TR).filter((k) => k.includes('’') && appSrc.includes(k.replace(/’/g, "'"))), [], 'phrases passed to helpers use the dictionary’s ’');
 const holes = (s) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort().join(); // using one twice is fine
 assert.deepEqual(Object.entries(TR).filter(([k, v]) => holes(k) !== holes(v)).map(([k]) => k), [], 'Turkish keeps every placeholder');
 const on = (d, h = 12) => ({ id: `${d}/${h}`, created: new Date(2026, 0, d, h).toISOString() });
