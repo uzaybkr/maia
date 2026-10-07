@@ -162,7 +162,7 @@ function renderAuth() {
       <button type="button" data-lang="en" aria-pressed="${LANG === 'en'}">English</button>
     </div>
     <section class="hero">
-      ${arch('lg', true)}
+      ${arch('sm', true)}
       <div class="eyebrow">${t('Maia · Self-care concierge')}</div>
       <h1 class="display">${t('A calmer ritual, <em>made for you.</em>')}</h1>
       <p class="lede">${t('Your goals, preferences and photos, composed into one quiet daily ritual.')}</p>
@@ -561,8 +561,8 @@ function renderOnboarding() {
   } else if (!state.user.is_premium) {
     wrap = mount(`
       ${top(4)}
-      ${maiaSays(t("I’ll begin with a ritual built from your answers. With Premium, I read your photos and write it just for you."))}
-      <h1>${t('Your <em>starter</em> ritual')}</h1>
+      ${maiaSays(t("I’ll begin with a ritual built from your answers."))}
+      <h1>${t('Your starter <em>ritual</em>')}</h1>
       ${premiumInvite()}
       <div class="actions"><button class="btn block" id="composeBtn">${t('Compose my starter ritual')}</button></div>
     `);
@@ -717,21 +717,21 @@ async function renderHome() {
         <div>
           <div class="eyebrow">${t('A note from Maia')}</div>
           <p class="quote">${esc(r.summary)}</p>
+          <div class="note-tag">${{ fallback: `<span class="pill" title="${t("Full personalization arrives once Maia’s AI is connected")}">${t('Preview ritual')}</span>`, starter: `<span class="pill">${t('Starter ritual')}</span>` }[state.source] || '<span class="signature">Maia</span>'}</div>
         </div>
       </div>
       <div class="foot">
         ${ring(pct)}
         <div style="flex:1"><strong>${t('{done} of {total}', { done, total })}</strong><span class="muted">${t('steps today')}</span></div>
-        ${{ fallback: `<span class="pill" title="${t("Full personalization arrives once Maia’s AI is connected")}">${t('Preview ritual')}</span>`, starter: `<span class="pill">${t('Starter ritual')}</span>` }[state.source] || '<span class="signature">Maia</span>'}
       </div>
     </section>
-    ${state.source === 'starter' ? premiumInvite(`<a class="btn block" href="${state.user.is_premium ? '#/compose' : '#/premium'}">${t(state.user.is_premium ? 'Compose with my photos' : 'Discover Premium')}</a>`) : ''}
     <div class="seg" role="group" aria-label="${t('Ritual moment')}">
       ${moments.map(([k, label, ic]) => `<button type="button" data-seg="${k}" aria-pressed="${seg === k}">${icon(ic, 16)}${t(label)}</button>`).join('')}
     </div>
     <section class="glass steps-list">
       ${stepRows(seg) || `<p class="empty-steps">${t('Nothing in this moment today. Enjoy the space.')}</p>`}
     </section>
+    ${state.source === 'starter' ? premiumInvite(`<a class="btn block" href="${state.user.is_premium ? '#/compose' : '#/premium'}">${t(state.user.is_premium ? 'Compose with my photos' : 'Discover Premium')}</a>`) : ''}
     <div class="section-title"><h2>${t('Nourish and <em>move</em>')}</h2></div>
     <div class="tiles">
       <section class="tile tile-peach"><div class="tile-head">${icon('leaf', 14)} ${t('Nourish')}</div>${stepRows('meal_support')}</section>
@@ -996,7 +996,7 @@ function renderAccount() {
     <div class="eyebrow list-label">${t('Privacy')}</div>
     <section class="glass list">
       <div class="list-row static"><span class="ic">${icon('shield')}</span><span class="grow">${t('Photos delete themselves daily')}<small>${t('Nothing kept past the end of your day')}</small></span></div>
-      <button class="list-row" id="deleteBtn"><span class="ic">${icon('trash')}</span><span class="grow">${t('Delete photos, examinations and chat')}</span></button>
+      <button class="list-row danger" id="deleteBtn"><span class="ic">${icon('trash')}</span><span class="grow">${t('Delete photos, examinations and chat')}</span></button>
       <button class="list-row danger" id="deleteAccountBtn"><span class="ic">${icon('trash')}</span><span class="grow">${t('Delete my account')}</span></button>
     </section>
     <section class="glass list">
@@ -1147,12 +1147,13 @@ async function renderPremium(status) {
   const pkgs = store ? await storePackages().catch(() => ({})) : {};
   const u = state.user;
   let selected = state.selectedPlan || 'annual';
+  const local = (s, n = priceOf(s)) => s.replace(/[\d.,]+/, n.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const planOf = (id) => {
     const p = billing.plans.find((x) => x.id === id);
-    return { ...p, price: pkgs[id]?.product?.priceString || p.price };
+    return { ...p, price: pkgs[id]?.product?.priceString || local(p.price) }; // store prices arrive already localized
   };
   const perMonth = (p) => (p.period === 'year' && priceOf(p.price)
-    ? t('{price} a month, billed yearly', { price: p.price.replace(/[\d.,]+/, (priceOf(p.price) / 12).toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })) })
+    ? t('{price} a month, billed yearly', { price: local(p.price, priceOf(p.price) / 12) })
     : t('Cancel anytime'));
   const manageHint = {
     stripe: NATIVE ? 'Manage or cancel on the Maia website.' : 'Manage or cancel anytime below.',
@@ -1170,7 +1171,7 @@ async function renderPremium(status) {
   const wrap = mount(`
     <div class="spread"><button class="icon-btn" id="closeBtn" aria-label="${t('Close')}">${icon('close')}</button><span></span></div>
     <section class="hero" style="padding-top:0">
-      ${arch('', true)}
+      ${arch('sm', true)}
       <div class="eyebrow" lang="en">Maia Premium</div>
       <h1 class="display">${t(u.is_premium ? 'Your ritual, <em>in full.</em>' : 'The full ritual, <em>every day.</em>')}</h1>
     </section>
@@ -1183,9 +1184,6 @@ async function renderPremium(status) {
         ${u.billing_source === 'stripe' && !NATIVE ? `<button class="btn ghost block" id="portalBtn">${t('Manage subscription')}</button>` : ''}
         ${NATIVE && STORE_MANAGE_URL[PLATFORM] && !['stripe', 'dev'].includes(u.billing_source) ? `<button class="btn ghost block" id="storeManageBtn">${t('Manage subscription')}</button>` : ''}
       </section>` : `
-      <section class="glass benefits">
-        ${benefits.map(([ic, title, sub]) => `<div class="benefit"><span class="ic">${icon(ic, 18)}</span><div><strong>${esc(title)}</strong><span>${esc(sub)}</span></div></div>`).join('')}
-      </section>
       <div class="plans" role="radiogroup" aria-label="Plan">
         ${billing.plans.map((x) => planOf(x.id)).map((p) => `
           <button type="button" class="plan" role="radio" data-plan="${esc(p.id)}" aria-checked="${p.id === selected}">
@@ -1199,7 +1197,10 @@ async function renderPremium(status) {
       <button class="btn block" id="buyBtn"></button>
       <p class="fine" id="disclosure"></p>
       ${NATIVE ? `<button class="btn quiet" id="restoreBtn">${t('Restore purchases')}</button>` : ''}
-      ${billing.devUpgrade ? `<button class="btn ghost small" id="devBtn">${t('Payments not configured: unlock for testing')}</button>` : ''}`}
+      ${billing.devUpgrade ? `<button class="btn ghost small" id="devBtn">${t('Payments not configured: unlock for testing')}</button>` : ''}
+      <section class="glass benefits">
+        ${benefits.map(([ic, title, sub]) => `<div class="benefit"><span class="ic">${icon(ic, 18)}</span><div><strong>${esc(title)}</strong><span>${esc(sub)}</span></div></div>`).join('')}
+      </section>`}
     <p class="fine center"><a href="/terms.html">${t('Terms of Use')}</a> · <a href="/privacy.html">${t('Privacy Policy')}</a></p>
   `, { noir: true });
   wrap.querySelector('#closeBtn').addEventListener('click', () => (history.length > 1 ? history.back() : nav('#/home')));

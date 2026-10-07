@@ -117,8 +117,8 @@ window.MAIA_TR = {
   [`Mild`]: `Ilıman`,
   [`Cold & dry`]: `Soğuk ve kuru`,
   [`Changing seasons`]: `Dört mevsim`,
-  [`I’ll begin with a ritual built from your answers. With Premium, I read your photos and write it just for you.`]: `Cevaplarına göre bir başlangıç rutini hazırlayacağım. Premium’da fotoğraflarını da analiz edip rutinini tamamen sana göre yazarım.`,
-  [`Your <em>starter</em> ritual`]: `<em>Başlangıç</em> rutinin`,
+  [`I’ll begin with a ritual built from your answers.`]: `Cevaplarına göre bir başlangıç rutini hazırlayacağım.`,
+  [`Your starter <em>ritual</em>`]: `Başlangıç <em>rutinin</em>`,
   [`Compose my starter ritual`]: `Başlangıç rutinimi hazırla`,
   [`Optional. A photo shows me where to start, and it’s gone from our servers by tonight.`]: `İsteğe bağlı. Fotoğraf, nereden başlayacağımı görmeme yardım eder; gün sonunda sunucularımızdan silinir.`,
   [`Compose my ritual`]: `Rutinimi hazırla`,
@@ -164,7 +164,7 @@ window.MAIA_TR = {
 
   // Shop
   [`Maia’s picks`]: `<span lang="en">Maia</span>’nın önerileri`,
-  [`What matters <em>first</em>`]: `<em>Öncelikli</em> ürünler`,
+  [`What matters <em>first</em>`]: `Öncelikli <em>ürünler</em>`,
   [`{n} essential for {total}. Everything else can wait.`]: `Önce {n} ürün yeterli, toplam {total}. Gerisi acele değil.`,
   [`{n} essentials for {total}. Everything else can wait.`]: `Önce {n} ürün yeterli, toplam {total}. Gerisi acele değil.`,
   [`{n} essential. Everything else can wait.`]: `Önce {n} ürün yeterli. Gerisi acele değil.`,
