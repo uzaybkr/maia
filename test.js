@@ -52,6 +52,8 @@ assert.throws(() => normalizeExamination('skin', { metrics: {} }), 'examination 
     assert.deepEqual(sent.map((b) => b.max_tokens), [3000, 16000, 8000, 3000], 'only a new ritual may write long; caps what one call can cost');
     stop = 'max_tokens';
     assert.equal((await examinePhoto('skin', img)).examination, null, 'truncated reply is not stored as a score');
+    assert.equal((await generateRitual({ goals: ['Glow'] })).ritual, null, 'a failed AI call never swaps in the template ritual');
+    assert.equal((await generateChatReply({}, null, [], 'hi')).reply, null, 'a failed AI call never saves a canned reply');
   } finally {
     Object.assign(globalThis, { fetch: saved.fetch });
     Object.assign(console, { log: saved.log, error: saved.error });
@@ -82,6 +84,9 @@ assert.ok(fs.statSync('public/vendor/anime.min.js').size > 50000, 'anime.js is v
 assert.deepEqual(Object.keys(TR).filter((k) => k.includes('’') && appSrc.includes(k.replace(/’/g, "'"))), [], 'phrases passed to helpers use the dictionary’s ’');
 const holes = (s) => [...new Set([...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort().join(); // using one twice is fine
 assert.deepEqual(Object.entries(TR).filter(([k, v]) => holes(k) !== holes(v)).map(([k]) => k), [], 'Turkish keeps every placeholder');
+const serverSrc = ['server.js', ...fs.readdirSync('lib').map((f) => `lib/${f}`)].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+const serverMessages = [...serverSrc.matchAll(/error: (['"])((?:(?!\1).)+)\1|httpError\(\d+, '([^']+)'\)/g)].map((m) => m[2] || m[3]);
+assert.deepEqual(serverMessages.filter((k) => !(k in TR)), [], 'every server message the app can show has Turkish');
 const on = (d, h = 12) => ({ id: `${d}/${h}`, created: new Date(2026, 0, d, h).toISOString() });
 const exams3 = [on(15), on(15, 9), on(14), on(7)];
 assert.equal(pickBaseline(exams3, 'day').id, '14/12', 'same-day exam is not a day baseline');
@@ -95,7 +100,7 @@ const bootProd = spawnSync(process.execPath, ['--input-type=module', '-e', "awai
 assert.notEqual(bootProd.status, 0, 'production without secrets refuses to start');
 assert.match(bootProd.stderr, /MAIA_PHOTO_KEY.*RESEND_API_KEY.*MAIA_PHOTO_DB/);
 const bootBackedUpPhotos = spawnSync(process.execPath, ['--input-type=module', '-e', "await import('./lib/env.js')"], {
-  env: { ...process.env, APP_URL: 'https://maia.example', MAIA_PHOTO_KEY: 'x', RESEND_API_KEY: 'x', MAIA_DATA_DIR: os.tmpdir(), MAIA_PHOTO_DB: path.join(os.tmpdir(), 'photos.db') },
+  env: { ...process.env, APP_URL: 'https://maia.example', MAIA_PHOTO_KEY: 'x', RESEND_API_KEY: 'x', ANTHROPIC_API_KEY: 'x', MAIL_FROM: 'x', MAIA_DATA_DIR: os.tmpdir(), MAIA_PHOTO_DB: path.join(os.tmpdir(), 'photos.db') },
   encoding: 'utf8',
 });
 assert.match(bootBackedUpPhotos.stderr, /outside MAIA_DATA_DIR/, 'production refuses a photo DB inside the backed-up data folder');
@@ -277,10 +282,13 @@ try {
 
   /* rituals + checkins */
   const ritualId = (await call('GET', '/api/ritual/today')).data.id;
-  assert.deepEqual((await call('POST', '/api/ritual/checkin', { ritualId, stepKey: 'morning-0', day: '2026-01-01' })).data.progress, ['morning-0']);
-  assert.deepEqual((await call('GET', '/api/ritual/today?day=2026-01-01')).data.progress, ['morning-0']);
-  assert.deepEqual((await call('GET', '/api/ritual/today?day=2026-01-02')).data.progress, [], 'progress resets each day');
+  const dayAt = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  assert.deepEqual((await call('POST', '/api/ritual/checkin', { ritualId, stepKey: 'morning-0', day: dayAt(0) })).data.progress, ['morning-0']);
+  assert.deepEqual((await call('GET', `/api/ritual/today?day=${dayAt(0)}`)).data.progress, ['morning-0']);
+  assert.deepEqual((await call('GET', `/api/ritual/today?day=${dayAt(1)}`)).data.progress, [], 'progress resets each day');
   assert.equal((await call('POST', '/api/ritual/checkin', { ritualId: 'not-mine', stepKey: 'x' })).status, 404);
+  assert.equal((await call('POST', '/api/ritual/checkin', { ritualId, stepKey: 'morning-99', day: dayAt(0) })).status, 400, 'only steps the ritual has');
+  assert.equal((await call('POST', '/api/ritual/checkin', { ritualId, stepKey: 'morning-0', day: dayAt(-30) })).status, 400, 'check-ins only around today');
 
   // Budget = AI attempts per kind (premium: 3 new rituals a week, 2 used so far); rejected requests don't count.
   assert.equal((await call('POST', '/api/ritual/generate')).status, 200);
@@ -474,11 +482,35 @@ try {
   let emailLimited = false;
   for (let i = 0; i < 22; i++) emailLimited ||= (await call('POST', '/api/login', { email: 'victim@y.co', password: 'nopenope1' }, { 'x-forwarded-for': `9.9.9.${i}` })).status === 429;
   assert.ok(emailLimited, 'per-email limit on failed logins across many IPs');
+  // People behind one carrier NAT or proxy share an address: their successful logins must not lock each other out.
+  let sharedOk = true;
+  for (let i = 0; i < 12; i++) sharedOk &&= (await call('POST', '/api/login', { email: 'demo', password: 'demo' }, { 'x-forwarded-for': '7.7.7.7' })).status === 200;
+  assert.ok(sharedOk, 'only failed logins count against an address');
+
+  // A DB first started in dev must not carry the demo login or test-mode Premium into production.
+  const liveDev = () => peek("SELECT COUNT(*) AS n FROM entitlements WHERE source = 'dev' AND premium_until > ?", [new Date().toISOString()]).n;
+  const other = peek("SELECT id FROM users WHERE email != 'demo' LIMIT 1").id;
+  sql(dbFile, 'run', "INSERT OR REPLACE INTO entitlements (user_id, source, plan, premium_until) VALUES (?, 'dev', 'monthly', ?)", [other, `${dayAt(30)}T00:00:00.000Z`]);
+  assert.ok(peek("SELECT COUNT(*) AS n FROM users WHERE email = 'demo'").n === 1 && liveDev() > 0, 'dev state exists before the production boot');
+  server.kill();
+  await new Promise((r) => ((server.exitCode ?? server.signalCode) !== null ? r() : server.on('exit', r)));
+  const prod = spawn(process.execPath, ['--no-warnings', 'server.js'], {
+    env: { ...env, PORT: String(PORT - 2), NODE_ENV: 'production', APP_URL: 'https://maia.example', RESEND_API_KEY: 're_test', ANTHROPIC_API_KEY: 'sk_test', MAIL_FROM: 'Maia <hello@example.com>' },
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  await new Promise((resolve, reject) => {
+    prod.stdout.on('data', (d) => String(d).includes('running') && resolve());
+    prod.on('exit', (c) => reject(new Error(`production boot failed (${c})`)));
+  });
+  prod.kill();
+  await new Promise((r) => ((prod.exitCode ?? prod.signalCode) !== null ? r() : prod.on('exit', r)));
+  assert.equal(peek("SELECT COUNT(*) AS n FROM users WHERE email = 'demo'").n, 0, 'production boot removes the demo login');
+  assert.equal(liveDev(), 0, 'production boot ends test-mode Premium');
 
   console.log('All smoke checks passed');
 } finally {
   server.kill();
-  await new Promise((r) => (server.exitCode !== null ? r() : server.on('exit', r)));
+  await new Promise((r) => ((server.exitCode ?? server.signalCode) !== null ? r() : server.on('exit', r)));
   (await import('./lib/db.js')).db.close();
   (await import('./lib/photos.js')).photoDb.close();
   for (const f of [dbFile, photoDbFile]) for (const s of ['', '-journal']) fs.rmSync(f + s, { force: true });

@@ -7,7 +7,7 @@ import { PORT, APP_URL, PROD } from './lib/env.js';
 import { run, get, all } from './lib/db.js';
 import {
   hashPassword, verifyPassword, createSession, destroySession, destroyAllSessions, getSessionUser, sessionCookie, clearCookie,
-  sessionToken, rateLimited, clearLimit, createToken, consumeToken, isPremium,
+  sessionToken, rateLimited, clearLimit, refundLimit, createToken, consumeToken, isPremium,
 } from './lib/auth.js';
 import {
   PLANS, setEntitlement, stripeEnabled, createCheckout, createPortal, verifyStripeSignature, applyStripeEvent, cancelStripeSubscriptions,
@@ -149,6 +149,11 @@ function recentMessages(userId, limit) {
 
 // Client sends its local date so "today" follows the user's timezone, not the server's.
 const dayOf = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : new Date().toISOString().slice(0, 10));
+// A user's local date is never more than a day from the server's UTC date, whatever their timezone.
+const nearToday = (day) => Math.abs(Date.parse(day) - Date.parse(new Date().toISOString().slice(0, 10))) <= DAY_MS;
+// Step keys exactly as the app derives them from the ritual ("morning-0", "meal-2"…), so check-ins stay bounded.
+const STEP_LISTS = { morning: 'morning', evening: 'evening', weekly_reset: 'weekly', meal_support: 'meal', movement_support: 'movement' };
+const stepKeysOf = (ritual) => Object.entries(STEP_LISTS).flatMap(([list, prefix]) => (ritual[list] || []).map((_, i) => `${prefix}-${i}`));
 
 function ritualProgress(ritualId, day) {
   return all('SELECT step_key FROM checkins WHERE ritual_id = ? AND day = ?', [ritualId, day]).map((r) => r.step_key);
@@ -166,7 +171,7 @@ const AI_LIMITS = {
   premium: { examination: [6, DAY_MS], ritual: [3, WEEK_MS], revise: [3, DAY_MS], chat: [15, DAY_MS] },
 };
 const AI_PER_MINUTE = 10;
-const AI_GLOBAL = Number(process.env.MAIA_AI_DAILY_CAP) || 2000;
+const AI_GLOBAL = Number(process.env.MAIA_AI_DAILY_CAP || 2000); // '0' really stops all AI (the emergency brake)
 const countCalls = (sinceMs, userId, kind) => get(
   `SELECT COUNT(*) AS n FROM ai_calls WHERE created_at > ?${userId ? ' AND user_id = ?' : ''}${kind ? ' AND kind = ?' : ''}`,
   [new Date(Date.now() - sinceMs).toISOString(), ...(userId ? [userId] : []), ...(kind ? [kind] : [])],
@@ -179,11 +184,27 @@ function takeAiCall(user, kind) {
   return true;
 }
 const AI_LIMIT = { error: 'That’s all for now. Maia will be ready again soon.' };
+const AI_DOWN = { error: 'Maia can’t answer right now. Please try again in a few minutes.' };
 
 // Periodic cleanup: expired photos (end of the user's day) and AI-call records older than the longest limit window.
 function housekeeping() {
-  purgeExpiredPhotos();
-  run('DELETE FROM ai_calls WHERE created_at < ?', [new Date(Date.now() - WEEK_MS - DAY_MS).toISOString()]);
+  try {
+    purgeExpiredPhotos();
+    run('DELETE FROM ai_calls WHERE created_at < ?', [new Date(Date.now() - WEEK_MS - DAY_MS).toISOString()]);
+  } catch (err) {
+    console.error('[housekeeping]', err.message); // e.g. the DB is briefly locked by a backup; the next minute retries
+  }
+}
+
+// Every row a person owns. Shared by account deletion and the production boot's demo cleanup.
+function deleteAccountRows(userId) {
+  deletePhotos(userId);
+  for (const table of ['sessions', 'profiles', 'rituals', 'checkins', 'messages', 'examinations', 'verifications', 'entitlements']) {
+    run(`DELETE FROM ${table} WHERE user_id = ?`, [userId]);
+  }
+  // Keep today's AI-call rows for the global cap, but unlinked from the deleted person.
+  run("UPDATE ai_calls SET user_id = 'deleted' WHERE user_id = ?", [userId]);
+  run('DELETE FROM users WHERE id = ?', [userId]);
 }
 
 const routes = {
@@ -234,14 +255,18 @@ const routes = {
     // Per-IP stops one attacker. Per-email stops a botnet spreading guesses on one account across many IPs. The email
     // attempt is counted up front (so parallel guesses can't race past the cap) and cleared on success, so only
     // failures accumulate, with a higher cap than per-IP.
+    // The per-IP count is refunded on success too, so people sharing one address (mobile carrier NAT, a proxy) are
+    // only ever limited by failed guesses.
     const emailKey = `login:${email}`;
-    if (rateLimited(`auth:${clientIp(req)}`) || rateLimited(emailKey, 20)) return send(res, 429, TOO_MANY);
+    const ipKey = `login-ip:${clientIp(req)}`;
+    if (rateLimited(ipKey) || rateLimited(emailKey, 20)) return send(res, 429, TOO_MANY);
     const password = String(body.password || '');
     const user = get('SELECT * FROM users WHERE email = ?', [email]);
     if (!(await verifyPassword(password, user?.password_hash))) {
       return send(res, 401, { error: 'Invalid email or password' });
     }
     clearLimit(emailKey);
+    refundLimit(ipKey);
     const session = createSession(user.id);
     send(res, 200, authBody(req, user, session), { 'set-cookie': sessionCookie(session.id) });
   },
@@ -353,6 +378,7 @@ const routes = {
     if (user.is_premium) {
       if (!takeAiCall(user, 'ritual')) return send(res, 429, AI_LIMIT);
       ({ ritual, source } = await generateRitual({ ...profile, photos: todaysPhotos(user.id) }, null, user.lang));
+      if (!ritual) return send(res, 503, AI_DOWN); // keep the paying user's current ritual rather than a template
     } else {
       // Free costs no AI: a starter ritual built from the onboarding answers. Capped only to stop row spam.
       if (rateLimited(`starter:${user.id}`, 10, DAY_MS)) return send(res, 429, AI_LIMIT);
@@ -385,6 +411,7 @@ const routes = {
     const note = String(body.note || '').slice(0, 300);
     // Revisions work from the current ritual text; photos are not re-sent to the AI provider.
     const { ritual, source } = await generateRitual({ ...profile, photos: {} }, { action, note, current: JSON.parse(current.content) }, user.lang);
+    if (!ritual) return send(res, 503, AI_DOWN);
     const id = crypto.randomUUID();
     run('INSERT INTO rituals (id, user_id, content, source, created_at) VALUES (?, ?, ?, ?, ?)', [id, user.id, JSON.stringify(ritual), source, new Date().toISOString()]);
     send(res, 200, { id, ritual, source, progress: [] });
@@ -397,7 +424,9 @@ const routes = {
     const stepKey = String(body.stepKey || '').slice(0, 40);
     const day = dayOf(body.day);
     if (!ritualId || !stepKey) return send(res, 400, { error: 'ritualId and stepKey required' });
-    if (!get('SELECT id FROM rituals WHERE id = ? AND user_id = ?', [ritualId, user.id])) return send(res, 404, { error: 'Ritual not found' });
+    const owned = get('SELECT content FROM rituals WHERE id = ? AND user_id = ?', [ritualId, user.id]);
+    if (!owned) return send(res, 404, { error: 'Ritual not found' });
+    if (!stepKeysOf(JSON.parse(owned.content)).includes(stepKey) || !nearToday(day)) return send(res, 400, { error: 'Unknown step' });
     run('INSERT OR IGNORE INTO checkins (id, user_id, ritual_id, step_key, day, done_at) VALUES (?, ?, ?, ?, ?, ?)', [crypto.randomUUID(), user.id, ritualId, stepKey, day, new Date().toISOString()]);
     send(res, 200, { progress: ritualProgress(ritualId, day) });
   },
@@ -419,8 +448,10 @@ const routes = {
     const ritualRow = getLatestRitual(user.id);
     const ritual = ritualRow ? JSON.parse(ritualRow.content) : null;
     const history = recentMessages(user.id, 20);
-    run('INSERT INTO messages (id, user_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)', [crypto.randomUUID(), user.id, 'user', message, new Date().toISOString()]);
+    const askedAt = new Date().toISOString();
     const { reply, source } = await generateChatReply(profile, ritual, history, message, user.lang);
+    if (!reply) return send(res, 503, AI_DOWN); // nothing saved, so the question can simply be sent again
+    run('INSERT INTO messages (id, user_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)', [crypto.randomUUID(), user.id, 'user', message, askedAt]);
     run('INSERT INTO messages (id, user_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)', [crypto.randomUUID(), user.id, 'assistant', reply, new Date().toISOString()]);
     send(res, 200, { reply, source });
   },
@@ -444,13 +475,7 @@ const routes = {
         return send(res, 502, { error: 'We couldn’t cancel your subscription, so your account was not deleted. Please try again.' });
       }
     }
-    deletePhotos(user.id);
-    for (const table of ['sessions', 'profiles', 'rituals', 'checkins', 'messages', 'examinations', 'verifications', 'entitlements']) {
-      run(`DELETE FROM ${table} WHERE user_id = ?`, [user.id]);
-    }
-    // Keep today's AI-call rows for the global cap, but unlinked from the deleted person.
-    run("UPDATE ai_calls SET user_id = 'deleted' WHERE user_id = ?", [user.id]);
-    run('DELETE FROM users WHERE id = ?', [user.id]);
+    deleteAccountRows(user.id);
     send(res, 200, { ok: true }, { 'set-cookie': clearCookie });
   },
 
@@ -485,7 +510,7 @@ const routes = {
 
   'POST /api/billing/revenuecat-webhook': async (req, res, body) => {
     if (!verifyRevenueCatAuth(req.headers.authorization)) return send(res, 401, { error: 'Unauthorized' });
-    applyRevenueCatEvent(body.event);
+    await applyRevenueCatEvent(body.event);
     send(res, 200, { received: true });
   },
 
@@ -534,8 +559,14 @@ const server = http.createServer(async (req, res) => {
 });
 
 // Local-only demo login (demo / demo) to try the app without signing up. Never created in production, where a known
-// password would be an open door.
-if (!PROD && !get("SELECT 1 AS x FROM users WHERE email = 'demo'")) {
+// password would be an open door, and removed there along with test-mode Premium if the DB was first started in dev.
+if (PROD) {
+  const demo = get("SELECT id FROM users WHERE email = 'demo'");
+  if (demo) deleteAccountRows(demo.id);
+  for (const r of all("SELECT user_id, plan FROM entitlements WHERE source = 'dev' AND premium_until > ?", [new Date().toISOString()])) {
+    setEntitlement(r.user_id, { plan: r.plan, premiumUntil: Date.now(), source: 'dev' });
+  }
+} else if (!get("SELECT 1 AS x FROM users WHERE email = 'demo'")) {
   const now = new Date().toISOString();
   run('INSERT INTO users (id, email, password_hash, created_at, age_confirmed_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?)',
     [crypto.randomUUID(), 'demo', await hashPassword('demo'), now, now, now]);

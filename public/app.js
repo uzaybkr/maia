@@ -253,6 +253,8 @@ function forgetSession() {
 }
 
 async function logout() {
+  // On a shared computer the next person must not find these selfies in the browser. On a phone they stay.
+  if (!NATIVE) await deviceDB.clearMine().catch(() => {});
   await api('POST', '/api/logout').catch(() => {});
   forgetSession();
   nav('#/auth');
@@ -703,9 +705,11 @@ function stepRow(it, key) {
 }
 const stepRows = (list) => (state.ritual[list] || []).map((it, i) => stepRow(it, `${PREFIX[list]}-${i}`)).join('');
 
+// Reloads on a new day, so an app left open overnight shows today's check-ins rather than yesterday's.
 async function loadRitualIfNeeded() {
-  if (state.ritual) return;
+  if (state.ritual && state.ritualDay === today()) return;
   const data = await api('GET', `/api/ritual/today?day=${today()}`);
+  state.ritualDay = today();
   if (data.ritual) {
     state.ritual = data.ritual; state.ritualId = data.id; state.progress = data.progress; state.source = data.source;
   }
@@ -1369,4 +1373,5 @@ async function route() {
 }
 
 window.addEventListener('hashchange', render);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.ritualDay && state.ritualDay !== today()) render(); });
 render();
