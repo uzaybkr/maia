@@ -4,6 +4,8 @@ A self-care app built on Claude. Users pick their goals and, with Premium, add s
 
 [![Apps](../../actions/workflows/apps.yml/badge.svg)](../../actions/workflows/apps.yml)
 
+![Sign-in, daily ritual, Premium and shopping screens](docs/screens.jpg)
+
 - **Server:** Node 24 with no runtime dependencies (`node:http`, `node:sqlite`, `node:crypto`): `server.js` + `lib/`.
 - **App:** plain JavaScript in `public/` with no build step, wrapped for iOS and Android with Capacitor 8.
 - **Payments:** Stripe on the web; App Store and Google Play through RevenueCat in the apps.
