@@ -1,10 +1,31 @@
 # Maia
 
-A calm self-care app: users pick their goals and, with Premium, add skin, hair and posture photos; Maia (Claude) writes a daily routine, scores the photos and answers questions. Web, iPhone and Android, in Turkish and English.
+A self-care app built on Claude. Users pick their goals and, with Premium, add skin, hair and posture photos. Claude writes a daily routine, scores the photos over time and answers follow-up questions. It runs on the web, iPhone and Android, in English and Turkish.
 
-- **Server:** Node 24, no dependencies (`node:http`, `node:sqlite`, `node:crypto`). `server.js` + `lib/`.
-- **App:** plain JavaScript in `public/` (no build step), wrapped for iOS/Android with Capacitor 8.
-- **Payments:** Stripe on the web, App Store / Google Play through RevenueCat in the apps.
+[![Apps](../../actions/workflows/apps.yml/badge.svg)](../../actions/workflows/apps.yml)
+
+- **Server:** Node 24 with no runtime dependencies (`node:http`, `node:sqlite`, `node:crypto`): `server.js` + `lib/`.
+- **App:** plain JavaScript in `public/` with no build step, wrapped for iOS and Android with Capacitor 8.
+- **Payments:** Stripe on the web; App Store and Google Play through RevenueCat in the apps.
+
+## How the AI layer works
+
+| Concern | How it's handled | Where |
+|---|---|---|
+| **Model routing** | Each task gets its own model, effort level and `max_tokens` cap. The first ritual, built from photos, is rare and is the core of the product, so it runs on Opus. Check-ins, revisions and chat are frequent, so they run on Sonnet at low effort. Any task can be overridden with `MAIA_MODEL_<TASK>`. | [`lib/ai.js`](lib/ai.js) |
+| **Cost control** | Every AI call is logged *before* the provider is called, so failed calls count and a restart can't reset the budget. Limits apply per user and per task, plus a per-minute limit and a global daily cap. `MAIA_AI_DAILY_CAP=0` stops all AI spending at once. The free tier makes no AI calls. | [`server.js`](server.js) (`AI_LIMITS`) |
+| **Structured output** | Prompts ask for JSON only. Replies are parsed, checked against the expected shape and clamped. A reply that was cut off or refused counts as a failure; it is never shown as a score. | `normalizeRitual`, `normalizeExamination` |
+| **Vision** | Photos are sent as base64 image blocks. Each area (skin, hair, posture) has a fixed set of metrics scored 0–10, so scores can be compared from day to day. | `examinePhoto` |
+| **Safety scope** | The prompts frame Maia as wellness guidance and never a diagnosis. Maia never comments on body shape or weight. An unclear photo gets neutral scores and an honest summary. | system prompts in `lib/ai.js` |
+| **Photo privacy** | Photos are encrypted at rest with AES-256-GCM. They live in a separate database kept out of backups, with `secure_delete` on, and are deleted at the end of the user's local day. Logs record token counts only, never content. | [`lib/vault.js`](lib/vault.js), [`lib/photos.js`](lib/photos.js) |
+| **Two languages** | The user's language drives the prompts, the fallback routines and emails. The tests fail if any phrase on screen has no Turkish version. | [`public/i18n.js`](public/i18n.js) |
+| **Offline fallback** | Without an API key the app still works. It uses rule-based routines and sample scores labelled "fallback", so local development costs nothing. | `lib/ai.js` |
+
+Comments marked `Known limit:` name each simplification on purpose and how to upgrade it.
+
+## Tests and CI
+
+`npm test` runs one smoke suite (about 10 seconds) against a real server with a stubbed Claude API. It covers model routing, refused or cut-off replies, the cost limits, XSS escaping, missing translations and production start-up checks. On every push, GitHub Actions runs the tests and builds both the Android APK and the iOS app.
 
 ## Run it locally
 
@@ -65,3 +86,7 @@ Store checklist (privacy labels, screenshots, review notes): `tasks/store-compli
 - `npm run vendor` copies anime.js into `public/vendor/` after upgrading it.
 - Every on-screen English phrase needs a Turkish entry in `public/i18n.js`; the tests fail otherwise, including server error messages.
 - Legal pages (`public/terms.html`, `public/privacy.html`) still have `[placeholders]` and need a lawyer's review, plus a Turkish (KVKK) version.
+
+## License
+
+All rights reserved. The source is public as a portfolio sample and is not licensed for reuse.

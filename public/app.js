@@ -19,7 +19,7 @@ function setLang(lang) {
   location.reload(); // the router tells the server on the next load, so Maia writes in this language too
 }
 
-// ponytail: native session token lives in WebView localStorage (app-sandboxed). Move to Keychain/Keystore
+// Known limit: native session token lives in WebView localStorage (app-sandboxed). Move to Keychain/Keystore
 // via a secure-storage plugin before handling anything more sensitive than a revocable session id.
 async function api(method, url, body) {
   const headers = {};
@@ -401,7 +401,7 @@ const policyCard = () => `<div class="glass policy"><div class="policy-head">${i
 const policyDetails = () => `<details class="glass policy"><summary>${icon('shield')} ${t('How Maia handles your photos')}</summary>${POLICY_POINTS}</details>`;
 
 // Photos the user chose to keep live only in this device's IndexedDB, tagged by account id so a shared device doesn't mix accounts.
-// ponytail: WebView IndexedDB can be evicted under storage pressure on iOS; move to Capacitor Filesystem if users report loss.
+// Known limit: WebView IndexedDB can be evicted under storage pressure on iOS; move to Capacitor Filesystem if users report loss.
 const deviceDB = {
   handle: null,
   open() {

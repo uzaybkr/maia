@@ -1,6 +1,6 @@
 # Builds both phone apps on every push to main, so they're proven to compile without a local Mac or Android Studio.
 # The Android build uploads an installable test APK (Actions → latest run → Artifacts).
-# ponytail: unsigned test builds only. Store-signed builds need the Apple/Google signing keys added as repo secrets.
+# Known limit: unsigned test builds only. Store-signed builds need the Apple/Google signing keys added as repo secrets.
 name: Apps
 
 on:
